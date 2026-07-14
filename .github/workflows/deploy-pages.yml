@@ -1,0 +1,117 @@
+name: Deploy Fare to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test -f dist/favicon.svg
+          test -f dist/apple-touch-icon.png
+          test -f dist/social-card.svg
+          test -f dist/manifest.webmanifest
+          test -f dist/sw.js
+          test -f dist/icon-192.png
+          test -f dist/icon-512.png
+          test -d dist/assets
+          find dist/assets -type f -name '*.js' -print -quit | grep -q .
+          find dist/assets -type f -name '*.css' -print -quit | grep -q .
+          grep -Fq 'src="/fare/assets/' dist/index.html
+          grep -Fq 'href="/fare/assets/' dist/index.html
+          grep -Fq 'href="/fare/manifest.webmanifest"' dist/index.html
+          grep -Fq 'href="/fare/favicon.svg"' dist/index.html
+          grep -Fq 'href="/fare/apple-touch-icon.png"' dist/index.html
+          grep -Fq 'href="https://harsh.bet/fare/"' dist/index.html
+          grep -Fq 'self.registration.scope' dist/sw.js
+          grep -R -Fq 'sw.js' dist/assets
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const manifest = JSON.parse(readFileSync('dist/manifest.webmanifest', 'utf8'));
+          const expectedIcons = new Map([
+            ['/fare/icon-192.png', '192x192'],
+            ['/fare/icon-512.png', '512x512'],
+          ]);
+
+          if (manifest.id !== '/fare/' || manifest.start_url !== '/fare/' || manifest.scope !== '/fare/') {
+            throw new Error('Fare manifest paths must stay rooted at /fare/.');
+          }
+          for (const icon of manifest.icons ?? []) {
+            if (expectedIcons.get(icon.src) === icon.sizes && icon.type === 'image/png') {
+              expectedIcons.delete(icon.src);
+            }
+          }
+          if (expectedIcons.size > 0) {
+            throw new Error('Fare manifest is missing its required PNG icons.');
+          }
+
+          const assertPngSize = (file, expected) => {
+            const bytes = readFileSync(file);
+            const width = bytes.readUInt32BE(16);
+            const height = bytes.readUInt32BE(20);
+            if (width !== expected || height !== expected) {
+              throw new Error(`${file} must be ${expected}x${expected}; received ${width}x${height}.`);
+            }
+          };
+          assertPngSize('dist/icon-192.png', 192);
+          assertPngSize('dist/icon-512.png', 512);
+          NODE
+          test ! -e CNAME
+          test ! -e dist/CNAME
+          touch dist/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
