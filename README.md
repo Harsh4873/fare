@@ -8,7 +8,7 @@ Fare is Harsh Dave's private, local-first calorie and macro tracker, published a
 - **Immutable history:** every diary entry stores its own nutrition and serving snapshot. Editing a saved food or an upstream catalog record never rewrites an earlier day.
 - **Flexible logging:** repeat a food, copy a meal or day, quick-add calories/macros, create custom foods, save meal templates, scan or type a barcode, or explicitly search Open Food Facts.
 - **Useful review:** day totals, remaining targets, macro bars, meal contribution, weekly averages, logged-day completeness, and frequently reused foods.
-- **Private sync:** the local IndexedDB/localStorage mirror works signed out. Optional Google sign-in syncs only the approved account through Firebase and keeps Fare isolated from the other harsh.bet apps.
+- **Private sync:** the local IndexedDB/localStorage mirror works signed out. Optional Google sign-in gives every verified account its own UID-scoped Firebase workspace and keeps Fare isolated from the other harsh.bet apps.
 - **Portable data:** JSON backup/import plus CSV diary export.
 
 Targets are always user-entered. Fare does not prescribe calorie deficits, macro plans, or medical nutrition guidance.
@@ -27,7 +27,7 @@ The app does not display or redistribute product images. Public nutrition data r
 
 Foods, meal templates, and diary entries are individual Firestore documents under `fare_users/{uid}`. Profile, targets, and settings are independent singleton documents. Records merge by `updatedAt` with a deterministic tie-break, and deletes are durable tombstones so an offline device cannot resurrect them. Safe sign-out waits for pending writes before clearing this app's local copy and named Firestore cache.
 
-`firestore.rules` carries the complete shared ruleset for Daymark, Slate, Fare, and Sift because a Firebase rules deployment replaces the project-wide ruleset. Keep the file identical across all four repositories. The Pages workflow does not deploy Firebase rules.
+`firestore.rules` carries the complete shared ruleset for Gym, Daymark, Slate, Fare, Notes, Sift, and Recall because a Firebase rules deployment replaces the project-wide ruleset. Keep the file byte-identical across all six repositories. The Pages workflow does not deploy Firebase rules.
 
 ## Development
 

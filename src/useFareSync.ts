@@ -39,7 +39,6 @@ import {
 } from './sync-core';
 import { parseFareState, type FareMutation, type FareStore } from './store';
 
-const ALLOWED_EMAIL = 'hdav4873@gmail.com';
 const WRITE_BATCH_SIZE = 450;
 const SINGLETON_COLLECTIONS = ['profile', 'targets', 'settings'] as const;
 const ENTITY_COLLECTIONS = ['foods', 'meals', 'entries'] as const;
@@ -515,9 +514,9 @@ export function useFareSync(store: FareStore): FareSync {
           : 'You are offline. Local calorie tracking is still available.');
         return;
       }
-      if (authUser.email?.toLowerCase() !== ALLOWED_EMAIL || !authUser.emailVerified) {
+      if (!authUser.emailVerified) {
         setStatus('action-needed');
-        setMessage(`Fare only allows ${ALLOWED_EMAIL}.`);
+        setMessage('Use a verified Google account to sync Fare.');
         void firebaseSignOut(firebaseAuth);
         return;
       }
@@ -571,9 +570,9 @@ export function useFareSync(store: FareStore): FareSync {
     try {
       await authPersistenceReady;
       const result = await signInWithPopup(firebaseAuth, googleProvider);
-      if (result.user.email?.toLowerCase() !== ALLOWED_EMAIL || !result.user.emailVerified) {
+      if (!result.user.emailVerified) {
         await firebaseSignOut(firebaseAuth);
-        throw new Error(`Fare only allows ${ALLOWED_EMAIL}.`);
+        throw new Error('Use a verified Google account to sync Fare.');
       }
     } catch (error) {
       setStatus('action-needed');

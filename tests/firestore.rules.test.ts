@@ -10,7 +10,7 @@ import { collection, deleteDoc, doc, getDoc, getDocs, setDoc } from 'firebase/fi
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
 
 const PROJECT_ID = 'demo-fare';
-const ALLOWED_EMAIL = 'hdav4873@gmail.com';
+const TEST_EMAIL = 'user.one@example.com';
 const OWNER_UID = 'fare-owner';
 const EMULATOR_ADDRESS = process.env.FIRESTORE_EMULATOR_HOST;
 const STAMP = '2026-07-12T10:00:00.000Z';
@@ -21,7 +21,7 @@ function authorizedContext(
   overrides: Record<string, unknown> = {},
 ): RulesTestContext {
   return testEnvironment.authenticatedContext(uid, {
-    email: ALLOWED_EMAIL,
+    email: TEST_EMAIL,
     email_verified: true,
     firebase: { sign_in_provider: 'google.com' },
     ...overrides,
@@ -86,10 +86,15 @@ describe.skipIf(!EMULATOR_ADDRESS)('combined Firestore security rules', () => {
     await assertFails(deleteDoc(reference));
   });
 
-  it('rejects other accounts, wrong uids, unverified users, non-Google providers, and anonymous access', async () => {
-    const wrongEmail = authorizedContext(testEnvironment, OWNER_UID, { email: 'someone@example.com' }).firestore();
-    await assertFails(getDoc(doc(wrongEmail, 'fare_users', OWNER_UID, 'profile', 'current')));
+  it('allows another verified Google account to use its own UID-scoped workspace', async () => {
+    const secondUid = 'second-fare-user';
+    const firestore = authorizedContext(testEnvironment, secondUid, { email: 'someone@example.com' }).firestore();
+    const profile = doc(firestore, 'fare_users', secondUid, 'profile', 'current');
+    await assertSucceeds(setDoc(profile, { updatedAt: STAMP }));
+    await assertSucceeds(getDoc(profile));
+  });
 
+  it('rejects wrong uids, unverified users, non-Google providers, and anonymous access', async () => {
     const wrongUid = authorizedContext(testEnvironment, 'someone-else').firestore();
     await assertFails(getDoc(doc(wrongUid, 'fare_users', OWNER_UID, 'foods', 'food-1')));
 
