@@ -42,6 +42,7 @@ import {
   SourceModal,
   SwapSheet,
   describeCompositionChanges,
+  type PickerSelection,
 } from './BreakdownSheets';
 import {
   ConfidenceChip,
@@ -57,7 +58,6 @@ import { analyzeMeal, buildInsights, diffNutrition } from './engine';
 import type {
   BreakdownFood,
   BreakdownMeal,
-  DishTemplate,
   Insight,
   MealComponent,
   MetricKey,
@@ -90,12 +90,18 @@ function InsightRow({ insight }: { insight: Insight }) {
   );
 }
 
+interface MealDraft {
+  readonly components: readonly MealComponent[];
+  readonly lastChange: LastChange | null;
+}
+
 export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
-  const [components, setComponents] = useState<readonly MealComponent[]>([]);
+  const [draft, setDraft] = useState<MealDraft>({ components: [], lastChange: null });
   const [mealName, setMealName] = useState('');
   const [restaurantId, setRestaurantId] = useState<string | undefined>(undefined);
   const [original, setOriginal] = useState<readonly MealComponent[] | null>(null);
-  const [lastChange, setLastChange] = useState<LastChange | null>(null);
+  const components = draft.components;
+  const lastChange = draft.lastChange;
   const [metric, setMetric] = useState<MetricKey>('calories');
   const [sortMode, setSortMode] = useState<SortMode>('share');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -123,80 +129,112 @@ export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
       .sort((left, right) => right.consumedAt.localeCompare(left.consumedAt))[0];
   }, [state.entries, restaurant]);
 
-  function applyComponents(next: readonly MealComponent[], description: string) {
-    const delta = diffNutrition(analysis.totals, analyzeMeal(next).totals);
-    setComponents(next);
-    setLastChange({ description, delta });
+  /**
+   * All meal mutations flow through a functional update so several queued
+   * edits in one event (e.g. a batch add) compose instead of overwriting each
+   * other, and the delta banner is computed from the true previous state.
+   */
+  function applyComponents(
+    compute: (current: readonly MealComponent[]) => readonly MealComponent[],
+    description: string,
+  ) {
+    setDraft((current) => {
+      const next = compute(current.components);
+      return {
+        components: next,
+        lastChange: {
+          description,
+          delta: diffNutrition(analyzeMeal(current.components).totals, analyzeMeal(next).totals),
+        },
+      };
+    });
+  }
+
+  function mergeFood(
+    current: readonly MealComponent[],
+    food: BreakdownFood,
+    quantity: number,
+  ): readonly MealComponent[] {
+    const existing = current.find((component) => component.food.id === food.id && component.food.sourceType === food.sourceType);
+    if (existing) {
+      return current.map((component) => component.id === existing.id
+        ? { ...component, quantity: Math.round((component.quantity + quantity) * 100) / 100 }
+        : component);
+    }
+    return [...current, { id: createId('comp'), food, quantity }];
   }
 
   function addFood(food: BreakdownFood, quantity: number) {
-    const existing = components.find((component) => component.food.id === food.id && component.food.sourceType === food.sourceType);
-    if (existing) {
-      applyComponents(
-        components.map((component) => component.id === existing.id
-          ? { ...component, quantity: Math.round((component.quantity + quantity) * 100) / 100 }
-          : component),
-        `Added ${food.name}`,
-      );
-      return;
-    }
-    applyComponents([...components, { id: createId('comp'), food, quantity }], `Added ${food.name}`);
+    applyComponents((current) => mergeFood(current, food, quantity), `Added ${food.name}`);
   }
 
-  function addTemplate(template: DishTemplate) {
-    const expanded = expandTemplate(template);
-    if (!expanded.length) return;
-    applyComponents([...components, ...expanded], `Added ${template.name} (recipe estimate)`);
+  function addMany(picks: readonly PickerSelection[]) {
+    if (!picks.length) return;
+    const first = picks[0];
+    const description = picks.length === 1
+      ? 'food' in first
+        ? `Added ${first.food.name}`
+        : `Added ${first.template.name} (recipe estimate)`
+      : `Added ${picks.length} items`;
+    applyComponents((current) => {
+      let next = current;
+      for (const pick of picks) {
+        next = 'food' in pick
+          ? mergeFood(next, pick.food, pick.quantity)
+          : [...next, ...expandTemplate(pick.template, pick.quantity)];
+      }
+      return next;
+    }, description);
   }
 
   function setQuantity(component: MealComponent, quantity: number) {
     if (Math.abs(quantity - component.quantity) < 1e-9) return;
     applyComponents(
-      components.map((candidate) => candidate.id === component.id ? { ...candidate, quantity } : candidate),
+      (current) => current.map((candidate) => candidate.id === component.id ? { ...candidate, quantity } : candidate),
       `${component.food.name} ×${formatNumber(component.quantity, 2)} → ×${formatNumber(quantity, 2)}`,
     );
   }
 
   function removeComponent(component: MealComponent) {
     applyComponents(
-      components.filter((candidate) => candidate.id !== component.id),
+      (current) => current.filter((candidate) => candidate.id !== component.id),
       `Removed ${component.food.name}`,
     );
   }
 
   function swapComponent(component: MealComponent, food: BreakdownFood) {
     applyComponents(
-      components.map((candidate) => candidate.id === component.id ? { ...candidate, food } : candidate),
+      (current) => current.map((candidate) => candidate.id === component.id ? { ...candidate, food } : candidate),
       `${component.food.name} → ${food.name}`,
     );
     setSwapTarget(null);
   }
 
   function applySuggestion(suggestion: OptimizeSuggestion) {
-    setComponents(suggestion.components);
-    setLastChange({
-      description: suggestion.changes.map((change) => change.description).join(' · '),
-      delta: suggestion.delta,
+    setDraft({
+      components: suggestion.components,
+      lastChange: {
+        description: suggestion.changes.map((change) => change.description).join(' · '),
+        delta: suggestion.delta,
+      },
     });
     setOptimizeOpen(false);
     onToast('Optimization applied. Compare shows the difference from your original build.');
   }
 
   function loadVariant(meal: BreakdownMeal) {
-    setComponents(meal.components);
+    setDraft({ components: meal.components, lastChange: null });
     setOriginal(meal.components);
     setMealName(meal.name);
     setRestaurantId(meal.restaurantId);
-    setLastChange(null);
     onToast(`Loaded “${meal.name}”.`);
   }
 
   function startOver() {
-    setComponents([]);
+    setDraft({ components: [], lastChange: null });
     setOriginal(null);
     setMealName('');
     setRestaurantId(undefined);
-    setLastChange(null);
   }
 
   function closePicker() {
@@ -292,7 +330,7 @@ export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
           restaurantId={restaurantId}
           onPickRestaurant={setRestaurantId}
           onAddFood={addFood}
-          onAddTemplate={addTemplate}
+          onAddMany={addMany}
           mealCalories={analysis.totals.calories}
           componentCount={components.length}
         />
@@ -505,7 +543,7 @@ export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
         restaurantId={restaurantId}
         onPickRestaurant={setRestaurantId}
         onAddFood={addFood}
-        onAddTemplate={addTemplate}
+        onAddMany={addMany}
         mealCalories={analysis.totals.calories}
         componentCount={components.length}
       />

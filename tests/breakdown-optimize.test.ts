@@ -154,6 +154,19 @@ describe('optimizeMeal', () => {
     expect(second).toEqual(first);
   });
 
+  it('still suggests when the baseline misses its goal by less than one change penalty', () => {
+    // 810 kcal vs an 800 kcal cap: the shortfall (10) is smaller than the
+    // change penalty (15), which used to prune every candidate.
+    const meal = [
+      component('c-main', food('f-main', 'Main', { calories: 590, proteinG: 30 })),
+      component('c-ranch2', food('f-ranch2', 'Ranch', { calories: 220, proteinG: 1 })),
+    ];
+    const suggestions = optimizeMeal(meal, { ...BASE_GOALS, maxCalories: 800 });
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions[0].meetsAllGoals).toBe(true);
+    expect(suggestions[0].totals.calories).toBeLessThanOrEqual(800);
+  });
+
   it('returns nothing when the meal already meets every goal', () => {
     const suggestions = optimizeMeal(salataWrap(), {
       ...BASE_GOALS,

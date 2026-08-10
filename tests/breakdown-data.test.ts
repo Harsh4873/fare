@@ -126,6 +126,16 @@ describe('breakdown catalog integrity', () => {
     }
   });
 
+  it('scales template expansion by the requested serving count', () => {
+    const template = DISH_TEMPLATES[0];
+    const single = expandTemplate(template, 1);
+    const double = expandTemplate(template, 2);
+    for (let index = 0; index < single.length; index += 1) {
+      expect(double[index].quantity).toBeCloseTo(single[index].quantity * 2, 6);
+    }
+    expect(expandTemplate(template, 0)[0].quantity).toBe(single[0].quantity);
+  });
+
   it('builds search pools with the in-context restaurant first', () => {
     const pool = searchPool('salata');
     const firstGenericIndex = pool.findIndex((food) => food.id.startsWith('generic-'));

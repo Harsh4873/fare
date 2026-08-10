@@ -15,7 +15,7 @@ import {
   Sparkles,
   Wand2,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MealSlot, Nutrition } from '../model';
 import {
   BottomSheet,
@@ -77,13 +77,19 @@ function PickerFoodRow({ food, onAdd }: { food: BreakdownFood; onAdd: (food: Bre
 
 type PickerLane = 'menu' | 'pantry' | 'describe';
 
+/** One chosen addition from the picker: a food or a dish template, times a quantity. */
+export type PickerSelection =
+  | { readonly food: BreakdownFood; readonly quantity: number }
+  | { readonly template: DishTemplate; readonly quantity: number };
+
 export interface AddComponentsSheetProps {
   open: boolean;
   onClose: () => void;
   restaurantId?: string;
   onPickRestaurant: (id: string | undefined) => void;
   onAddFood: (food: BreakdownFood, quantity: number) => void;
-  onAddTemplate: (template: DishTemplate) => void;
+  /** Batch add: called once with every matched item so no update is lost. */
+  onAddMany: (picks: readonly PickerSelection[]) => void;
   mealCalories: number;
   componentCount: number;
 }
@@ -94,7 +100,7 @@ export function AddComponentsSheet({
   restaurantId,
   onPickRestaurant,
   onAddFood,
-  onAddTemplate,
+  onAddMany,
   mealCalories,
   componentCount,
 }: AddComponentsSheetProps) {
@@ -144,25 +150,20 @@ export function AddComponentsSheet({
 
   function addMatched() {
     if (!matches) return;
-    let added = 0;
+    const picks: PickerSelection[] = [];
     matches.forEach((result, index) => {
       const choice = choiceFor(result, index);
       if (choice === SKIP) return;
       if (choice.startsWith('template:')) {
         const template = DISH_TEMPLATES.find((candidate) => candidate.id === choice.slice('template:'.length));
-        if (template) {
-          onAddTemplate(template);
-          added += 1;
-        }
+        if (template) picks.push({ template, quantity: result.item.quantity });
         return;
       }
       const food = foodById(choice);
-      if (food) {
-        onAddFood(food, result.item.quantity);
-        added += 1;
-      }
+      if (food) picks.push({ food, quantity: result.item.quantity });
     });
-    if (added > 0) {
+    if (picks.length > 0) {
+      onAddMany(picks);
       setDescribeText('');
       setMatches(null);
       setChoices({});
@@ -488,7 +489,13 @@ export function OptimizeModal({ open, onClose, components, restaurantId, onApply
   const [allowSwaps, setAllowSwaps] = useState(true);
   const [dietary, setDietary] = useState<'any' | 'vegetarian' | 'vegan'>('any');
   const [locked, setLocked] = useState<readonly string[]>([]);
-  const [suggestions, setSuggestions] = useState<readonly OptimizeSuggestion[] | null>(null);
+  const [result, setResult] = useState<{
+    base: readonly MealComponent[];
+    list: readonly OptimizeSuggestion[];
+  } | null>(null);
+  // Suggestions are only valid for the exact meal they were computed from;
+  // any edit changes the components identity and hides stale results.
+  const suggestions = result && result.base === components ? result.list : null;
 
   const currentTotals = useMemo(() => analyzeMeal(components).totals, [components]);
 
@@ -513,7 +520,7 @@ export function OptimizeModal({ open, onClose, components, restaurantId, onApply
   }
 
   function run() {
-    setSuggestions(optimizeMeal(components, goals(), searchPool(restaurantId)));
+    setResult({ base: components, list: optimizeMeal(components, goals(), searchPool(restaurantId)) });
   }
 
   const goalsSet = Boolean(parseGoal(maxCalories) || parseGoal(minProtein) || parseGoal(minFiber));
@@ -748,6 +755,13 @@ export interface SaveVariantModalProps {
 
 export function SaveVariantModal({ open, onClose, defaultName, onSave }: SaveVariantModalProps) {
   const [name, setName] = useState(defaultName);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    // Re-seed the field each time the dialog opens so a renamed meal or
+    // switched restaurant is reflected, without clobbering typing mid-edit.
+    if (open && !wasOpen.current) setName(defaultName);
+    wasOpen.current = open;
+  }, [open, defaultName]);
   return (
     <Modal
       open={open}

@@ -74,6 +74,18 @@ describe('normalizeText + similarity', () => {
     expect(similarity('chipotel ranch', 'Spicy Chipotle Ranch')).toBeGreaterThanOrEqual(0.55);
     expect(similarity('ranch', 'Spicy Chipotle Ranch')).toBeGreaterThanOrEqual(0.55);
   });
+
+  it('does not saturate on near-anagrams or shared letter runs', () => {
+    expect(similarity('tea', 'Steak')).toBeLessThan(0.55);
+    expect(similarity('salata wrap', 'Kalamata Olives')).toBeLessThan(0.55);
+    expect(similarity('almonds', 'Miso-Glazed Salmon')).toBeLessThan(0.55);
+    expect(similarity('tea', 'Steak')).toBeLessThan(similarity('chipotel ranch', 'Spicy Chipotle Ranch'));
+  });
+
+  it('reserves 1.0 for normalized-equal names so exact aliases win ties', () => {
+    expect(similarity('spicy chipotle ranch', 'Spicy Chipotle Ranch')).toBe(1);
+    expect(similarity('chipotel ranch', 'Spicy Chipotle Ranch')).toBeLessThan(1);
+  });
 });
 
 describe('parseMealText', () => {
@@ -103,6 +115,16 @@ describe('parseMealText', () => {
 
   it('clamps runaway quantities', () => {
     expect(parseMealText('99 ranch')[0].quantity).toBe(10);
+  });
+
+  it('treats size descriptors as measurements, not serving counts', () => {
+    expect(parseMealText('6 inch turkey')[0]).toEqual({ text: 'turkey', quantity: 1 });
+    expect(parseMealText('4 oz chicken')[0]).toEqual({ text: 'chicken', quantity: 1 });
+    expect(parseMealText('100 g paneer')[0]).toEqual({ text: 'paneer', quantity: 1 });
+  });
+
+  it('reads a footlong as two 6-inch servings', () => {
+    expect(parseMealText('footlong turkey')[0]).toEqual({ text: 'turkey', quantity: 2 });
   });
 });
 

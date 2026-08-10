@@ -204,8 +204,12 @@ export function optimizeMeal(
       if (move.result) resulting.push(move.result);
     }
     const totals = totalsOf(resulting);
-    const score = goalPenalty(totals, goals) + moves.length * CHANGE_PENALTY;
-    if (score >= baselineScore) return;
+    // Gate on goal improvement alone; the change penalty only ranks candidates.
+    // Otherwise a baseline that misses its goals by less than one change's
+    // penalty would prune every suggestion, including ones meeting every goal.
+    const candidatePenalty = goalPenalty(totals, goals);
+    if (candidatePenalty >= baselineScore) return;
+    const score = candidatePenalty + moves.length * CHANGE_PENALTY;
     const key = (['calories', 'proteinG', 'carbsG', 'fatG', 'fiberG', 'sodiumMg'] as const)
       .map((metric) => Math.round(totals[metric] * 10))
       .join('|');
