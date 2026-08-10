@@ -15,7 +15,7 @@ Targets are always user-entered. Fare does not prescribe calorie deficits, macro
 
 ## Breakdown
 
-Breakdown answers a different question than the diary: not "what did I eat" but "where do the numbers come from." Build a meal from curated restaurant menus (Salata, CAVA, Chipotle, Subway, Sweetgreen — values transcribed from each chain's published nutrition guide), USDA-derived pantry staples, reconstructed dishes (labelled estimates), or free text ("salata wrap, falafel, avocado and 2 spicy chipotle ranch").
+Breakdown answers a different question than the diary: not "what did I eat" but "where do the numbers come from." Build a meal from curated restaurant menus (Salata, CAVA, Chipotle, Subway — values transcribed from each chain's published nutrition guide — plus a generic Indian menu of common dishes with typical-portion estimates that names no specific restaurant), USDA-derived pantry staples, reconstructed dishes (labelled estimates), or free text ("salata wrap, falafel, avocado and 2 spicy chipotle ranch").
 
 - **Contribution analysis:** per-component share of calories, protein, carbs, fat, fiber, and sodium, plus protein/fiber efficiency (grams per 100 kcal) and calorie-density labels.
 - **Honest uncertainty:** every component carries its source and a high/medium/low confidence; estimated meals show a calorie range instead of fake precision, and tapping any row reveals the source and when it was last checked.

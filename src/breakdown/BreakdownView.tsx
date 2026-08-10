@@ -42,6 +42,7 @@ import {
   SourceModal,
   SwapSheet,
   describeCompositionChanges,
+  servesOfficialData,
   type PickerSelection,
 } from './BreakdownSheets';
 import {
@@ -285,7 +286,7 @@ export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
           description="Build a meal from official restaurant data, pantry staples, or plain words — then see exactly which components drive the calories, protein, and fiber."
         />
         <Panel variant="raised" padding="roomy">
-          <SectionHeading title="Start from a restaurant" size="small" description="Curated from each chain's published nutrition guide." />
+          <SectionHeading title="Start from a restaurant" size="small" description="Chain menus use published nutrition guides; the Indian menu uses typical-dish estimates." />
           <div className="restaurant-tiles">
             {RESTAURANTS.map((candidate) => (
               <button
@@ -378,7 +379,13 @@ export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
           )}
           <div className="breakdown-hero__badges">
             <ConfidenceChip confidence={analysis.confidence} />
-            {restaurant && <span className="fine-print">Official {restaurant.name} data, checked {restaurant.lastVerified}</span>}
+            {restaurant && (
+              <span className="fine-print">
+                {servesOfficialData(restaurant)
+                  ? `Official ${restaurant.name} data, checked ${restaurant.lastVerified}`
+                  : `Typical ${restaurant.name} dish estimates — portions vary by kitchen`}
+              </span>
+            )}
           </div>
         </div>
         <div className="breakdown-hero__macros">

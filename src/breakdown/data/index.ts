@@ -16,9 +16,9 @@ import type {
 import { CAVA } from './cava';
 import { CHIPOTLE } from './chipotle';
 import { GENERIC_FOODS, DISH_TEMPLATES } from './generic';
+import { INDIAN } from './indian';
 import { SALATA } from './salata';
 import { SUBWAY } from './subway';
-import { SWEETGREEN } from './sweetgreen';
 
 export { GENERIC_FOODS, DISH_TEMPLATES };
 
@@ -27,7 +27,7 @@ export const RESTAURANTS: readonly Restaurant[] = [
   CAVA,
   CHIPOTLE,
   SUBWAY,
-  SWEETGREEN,
+  INDIAN,
 ];
 
 const foodIndex = new Map<string, BreakdownFood>();
