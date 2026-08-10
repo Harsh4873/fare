@@ -43,7 +43,7 @@ function assertPlausible(food: BreakdownFood) {
 describe('breakdown catalog integrity', () => {
   it('ships the five launch restaurants', () => {
     expect(RESTAURANTS.map((restaurant) => restaurant.id).sort()).toEqual(
-      ['cava', 'chipotle', 'salata', 'subway', 'sweetgreen'],
+      ['cava', 'chipotle', 'indian', 'salata', 'subway'],
     );
     for (const restaurant of RESTAURANTS) {
       expect(restaurant.items.length).toBeGreaterThanOrEqual(25);
@@ -58,14 +58,21 @@ describe('breakdown catalog integrity', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('keeps restaurant items inside their restaurant categories with official provenance', () => {
+  it('keeps restaurant items inside their restaurant categories with honest provenance', () => {
     for (const restaurant of RESTAURANTS) {
       for (const item of restaurant.items) {
         expect(item.restaurantId, `${item.id} restaurantId`).toBe(restaurant.id);
         expect(item.id.startsWith(`${restaurant.id}-`), `${item.id} slug prefix`).toBe(true);
         expect(restaurant.categories, `${item.id} category ${item.category}`).toContain(item.category);
-        expect(item.sourceType).toBe('restaurant-official');
-        expect(item.confidence).toBe('high');
+        if (restaurant.id === 'indian') {
+          // The generic Indian menu is estimates of typical dishes — it must
+          // never masquerade as official restaurant data.
+          expect(item.sourceType).toBe('usda-generic');
+          expect(item.confidence).toBe('medium');
+        } else {
+          expect(item.sourceType).toBe('restaurant-official');
+          expect(item.confidence).toBe('high');
+        }
         expect(item.servingLabel.trim().length).toBeGreaterThan(0);
       }
     }
@@ -106,7 +113,10 @@ describe('breakdown catalog integrity', () => {
     expect(names('subway').some((name) => name.includes('chipotle southwest'))).toBe(true);
     expect(names('chipotle').some((name) => name.includes('guacamole'))).toBe(true);
     expect(names('cava').some((name) => name.includes('hummus'))).toBe(true);
-    expect(names('sweetgreen').some((name) => name.includes('avocado'))).toBe(true);
+    expect(names('indian').some((name) => name.includes('butter chicken'))).toBe(true);
+    expect(names('indian').some((name) => name.includes('samosa'))).toBe(true);
+    expect(names('indian').some((name) => name.includes('garlic naan'))).toBe(true);
+    expect(names('indian').some((name) => name.includes('dal'))).toBe(true);
   });
 
   it('keeps dish templates referentially intact and expandable', () => {

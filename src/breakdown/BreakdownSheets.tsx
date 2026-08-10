@@ -58,6 +58,11 @@ function sourceBadgeFor(food: BreakdownFood) {
   return <SourceBadge source="estimated" label="Estimate" />;
 }
 
+/** Whether a restaurant's values come from its published nutrition guide. */
+export function servesOfficialData(restaurant: { items: readonly BreakdownFood[] } | undefined): boolean {
+  return restaurant?.items[0]?.sourceType === 'restaurant-official';
+}
+
 function PickerFoodRow({ food, onAdd }: { food: BreakdownFood; onAdd: (food: BreakdownFood) => void }) {
   return (
     <button type="button" className="picker-item" onClick={() => onAdd(food)}>
@@ -179,7 +184,7 @@ export function AddComponentsSheet({
       open={open}
       onClose={onClose}
       title="Build your meal"
-      description={restaurant ? `${restaurant.name} · official nutrition guide` : 'Pick a restaurant menu, pantry staples, or describe the meal in words.'}
+      description={restaurant ? `${restaurant.name} · ${servesOfficialData(restaurant) ? 'official nutrition guide' : 'typical-dish estimates'}` : 'Pick a restaurant menu, pantry staples, or describe the meal in words.'}
       width="large"
       footer={
         <div className="picker-footer">
@@ -208,8 +213,8 @@ export function AddComponentsSheet({
             {RESTAURANTS.map((candidate) => (
               <button type="button" key={candidate.id} className="restaurant-tile" onClick={() => onPickRestaurant(candidate.id)}>
                 <strong>{candidate.name}</strong>
-                <span>{candidate.items.length} items · official data</span>
-                <SourceBadge source="verified" label={`Checked ${candidate.lastVerified}`} />
+                <span>{candidate.items.length} items · {servesOfficialData(candidate) ? 'official data' : 'typical-dish estimates'}</span>
+                <SourceBadge source={servesOfficialData(candidate) ? 'verified' : 'estimated'} label={`Checked ${candidate.lastVerified}`} />
               </button>
             ))}
           </div>
