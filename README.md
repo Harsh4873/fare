@@ -13,6 +13,18 @@ Fare is Harsh Dave's private, local-first calorie and macro tracker, published a
 
 Targets are always user-entered. Fare does not prescribe calorie deficits, macro plans, or medical nutrition guidance.
 
+## Breakdown
+
+Breakdown answers a different question than the diary: not "what did I eat" but "where do the numbers come from." Build a meal from curated restaurant menus (Salata, CAVA, Chipotle, Subway, Sweetgreen — values transcribed from each chain's published nutrition guide), USDA-derived pantry staples, reconstructed dishes (labelled estimates), or free text ("salata wrap, falafel, avocado and 2 spicy chipotle ranch").
+
+- **Contribution analysis:** per-component share of calories, protein, carbs, fat, fiber, and sodium, plus protein/fiber efficiency (grams per 100 kcal) and calorie-density labels.
+- **Honest uncertainty:** every component carries its source and a high/medium/low confidence; estimated meals show a calorie range instead of fake precision, and tapping any row reveals the source and when it was last checked.
+- **Instant editing:** quantity steppers, removals, and same-category swaps recalculate immediately and show the signed difference ("-220 kcal · -1 g protein").
+- **Deterministic optimizer:** goal constraints (calorie cap, protein/fiber floors, max changes, locked ingredients, vegetarian/vegan swaps) searched over real menu options — no AI arithmetic, ever.
+- **Compare + variants:** original-vs-current diffs, device-local saved variants, and one-tap logging of the finished meal into the diary as a normal immutable snapshot.
+
+All Breakdown math is pure TypeScript (`src/breakdown/engine.ts`, `optimize.ts`, `parse.ts`) with the catalog in `src/breakdown/data/`. Restaurant values are point-in-time transcriptions — each item records `lastVerified` so stale data is visible, not hidden.
+
 ## Food data
 
 Fare searches personal history instantly. Public search happens only after an explicit request because Open Food Facts limits searches and specifically warns against search-as-you-type. Barcode reads use the current product endpoint. Every imported result keeps its source, serving basis, fetch time, and a data-quality note so it can be reviewed before logging.

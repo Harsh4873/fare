@@ -15,6 +15,7 @@ import {
   LogOut,
   MoreHorizontal,
   Pencil,
+  PieChart,
   Pin,
   PinOff,
   Plus,
@@ -32,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AddFoodSheet } from './components/AddFoodSheet';
+import { BreakdownView } from './breakdown/BreakdownView';
 import { addDays, dateRange, fromDateKey, toDateKey } from './dates';
 import { rankUsuals } from './memory';
 import {
@@ -60,7 +62,7 @@ import {
 } from './ui';
 import { useFareSync, type FareSync } from './useFareSync';
 
-type Route = 'today' | 'history' | 'usuals' | 'insights' | 'profile';
+type Route = 'today' | 'history' | 'usuals' | 'breakdown' | 'insights' | 'profile';
 
 interface NavItem {
   id: Route;
@@ -72,6 +74,7 @@ const NAVIGATION: NavItem[] = [
   { id: 'today', label: 'Today', icon: Utensils },
   { id: 'history', label: 'History', icon: CalendarDays },
   { id: 'usuals', label: 'Usuals', icon: Sparkles },
+  { id: 'breakdown', label: 'Breakdown', icon: PieChart },
   { id: 'insights', label: 'Insights', icon: BarChart3 },
   { id: 'profile', label: 'Profile', icon: CircleUserRound },
 ];
@@ -579,6 +582,7 @@ export default function App() {
         {route === 'today' && <TodayView state={state} store={store} dateKey={dateKey} onDateChange={setDateKey} onAdd={openAdd} onEdit={setEditingEntry} onToast={setToast} />}
         {route === 'history' && <HistoryView state={state} onSelectDate={(date) => { setDateKey(date); setRoute('today'); }} />}
         {route === 'usuals' && <UsualsView state={state} store={store} onAdd={() => openAdd()} onSaveMeal={() => setSaveMealOpen(true)} onToast={setToast} />}
+        {route === 'breakdown' && <BreakdownView state={state} store={store} onToast={setToast} />}
         {route === 'insights' && <InsightsView state={state} />}
         {route === 'profile' && <ProfileView state={state} store={store} sync={sync} onToast={setToast} />}
       </main>
