@@ -59,18 +59,20 @@ export function searchPool(restaurantId?: string): readonly BreakdownFood[] {
 }
 
 /**
- * Expands a dish template into meal components. The underlying values are
- * USDA-derived, but the dish composition itself is a guess, so every expanded
- * component is downgraded to a low-confidence reconstruction.
+ * Expands a dish template into meal components, scaled by how many servings
+ * of the dish were requested. The underlying values are USDA-derived, but the
+ * dish composition itself is a guess, so every expanded component is
+ * downgraded to a low-confidence reconstruction.
  */
-export function expandTemplate(template: DishTemplate): MealComponent[] {
+export function expandTemplate(template: DishTemplate, multiplier = 1): MealComponent[] {
+  const safeMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
   const components: MealComponent[] = [];
   for (const part of template.components) {
     const food = foodById(part.foodId);
     if (!food) continue;
     components.push({
       id: createId('comp'),
-      quantity: part.quantity,
+      quantity: Math.round(part.quantity * safeMultiplier * 100) / 100,
       food: {
         ...food,
         sourceType: 'reconstruction',

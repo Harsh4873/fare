@@ -36,9 +36,23 @@ const NUMBER_WORDS: Record<string, number> = {
   double: 2,
   triple: 3,
   half: 0.5,
+  /** A footlong is two 6-inch servings in the Subway dataset. */
+  footlong: 2,
 };
 
 const FILLER_WORDS = new Set(['of', 'the', 'my', 'some', 'please', 'order']);
+
+/**
+ * Size and weight descriptors: a bare number followed by one of these is a
+ * measurement ("6 inch turkey", "4 oz chicken"), not a serving count.
+ */
+const UNIT_WORDS = new Set([
+  'inch', 'inches', 'in', 'cm', 'mm',
+  'oz', 'ounce', 'ounces',
+  'g', 'gram', 'grams', 'kg',
+  'lb', 'lbs', 'pound', 'pounds',
+  'ml', 'liter', 'litre',
+]);
 
 export function normalizeText(value: string): string {
   return value
@@ -75,16 +89,26 @@ function bigramDice(a: string, b: string): number {
   return (2 * overlap) / (sizeA + sizeB);
 }
 
-function tokensMatch(a: string, b: string): boolean {
-  if (a === b) return true;
-  if (a.length < 3 || b.length < 3) return false;
-  return bigramDice(a, b) >= FUZZY_TOKEN_THRESHOLD;
+/**
+ * Token-level fuzzy quality: 1 for equality, the bigram overlap for a
+ * plausible typo (same first letter, length 3+), 0 otherwise. The first-letter
+ * guard stops accidental near-anagrams ("tea" vs "steak", "salata" vs
+ * "kalamata") from counting as typo matches.
+ */
+function tokenQuality(a: string, b: string): number {
+  if (a === b) return 1;
+  if (a.length < 3 || b.length < 3) return 0;
+  if (a[0] !== b[0]) return 0;
+  const dice = bigramDice(a, b);
+  return dice >= FUZZY_TOKEN_THRESHOLD ? dice : 0;
 }
 
 /**
- * 0..1 similarity: typo-tolerant token overlap blended with character
- * bigrams, plus a containment boost when every token of the shorter string
- * appears (fuzzily) in the longer one.
+ * 0..1 similarity: typo-tolerant token overlap (fuzzy hits earn partial
+ * credit, so a marginal typo never counts like an exact word) blended with
+ * character bigrams. A containment boost applies when every token of the
+ * shorter string appears in the longer one — for a single-token query only
+ * when it matched exactly. Only normalized-equal strings reach 1.0 outright.
  */
 export function similarity(a: string, b: string): number {
   const normalA = normalizeText(a);
@@ -95,22 +119,35 @@ export function similarity(a: string, b: string): number {
   const tokensA = normalA.split(' ');
   const tokensB = normalB.split(' ');
   const matchedB = new Set<number>();
-  let matches = 0;
+  let matchCount = 0;
+  let qualitySum = 0;
+  let allExact = true;
   for (const token of tokensA) {
-    const index = tokensB.findIndex((candidate, position) =>
-      !matchedB.has(position) && tokensMatch(token, candidate));
-    if (index >= 0) {
-      matchedB.add(index);
-      matches += 1;
+    let bestIndex = -1;
+    let bestQuality = 0;
+    tokensB.forEach((candidate, position) => {
+      if (matchedB.has(position)) return;
+      const quality = tokenQuality(token, candidate);
+      if (quality > bestQuality) {
+        bestQuality = quality;
+        bestIndex = position;
+      }
+    });
+    if (bestIndex >= 0) {
+      matchedB.add(bestIndex);
+      matchCount += 1;
+      qualitySum += bestQuality;
+      if (bestQuality < 1) allExact = false;
     }
   }
-  const tokenDice = (2 * matches) / (tokensA.length + tokensB.length);
+  const tokenDice = (2 * qualitySum) / (tokensA.length + tokensB.length);
   const charDice = bigramDice(normalA, normalB);
   let score = 0.55 * tokenDice + 0.45 * charDice;
 
-  const shorter = tokensA.length <= tokensB.length ? tokensA : tokensB;
-  const contained = shorter.length > 0 && matches >= shorter.length;
-  if (contained) score = Math.min(1, score + 0.15);
+  const shorterLength = Math.min(tokensA.length, tokensB.length);
+  const contained = shorterLength > 0 && matchCount >= shorterLength;
+  const boostAllowed = shorterLength > 1 || (contained && allExact);
+  if (contained && boostAllowed) score = Math.min(1, score + 0.15);
   return Math.min(1, score);
 }
 
@@ -123,21 +160,34 @@ function extractQuantity(segment: string): ParsedItem | undefined {
   let text = segment.trim();
   let quantity: number | undefined;
 
-  const patterns: Array<{ regex: RegExp; pick: (match: RegExpMatchArray) => number }> = [
+  const patterns: Array<{
+    regex: RegExp;
+    pick: (match: RegExpMatchArray) => number;
+    bareNumber?: boolean;
+  }> = [
     { regex: /^x\s*(\d+(?:\.\d+)?)\s+/i, pick: (match) => Number(match[1]) },
     { regex: /^(\d+)\s*\/\s*(\d+)\s+/, pick: (match) => Number(match[1]) / Number(match[2]) },
     { regex: /^(\d+(?:\.\d+)?)\s*x\s+/i, pick: (match) => Number(match[1]) },
-    { regex: /^(\d+(?:\.\d+)?)\s+/, pick: (match) => Number(match[1]) },
+    { regex: /^(\d+(?:\.\d+)?)\s+/, pick: (match) => Number(match[1]), bareNumber: true },
     { regex: /\s+x\s*(\d+(?:\.\d+)?)$/i, pick: (match) => Number(match[1]) },
     { regex: /\s+(\d+(?:\.\d+)?)\s*x$/i, pick: (match) => Number(match[1]) },
   ];
-  for (const { regex, pick } of patterns) {
+  for (const { regex, pick, bareNumber } of patterns) {
     const match = text.match(regex);
-    if (match) {
-      quantity = pick(match);
-      text = text.replace(regex, ' ').trim();
-      break;
+    if (!match) continue;
+    const remainder = text.replace(regex, ' ').trim();
+    if (bareNumber) {
+      const nextToken = normalizeText(remainder).split(' ')[0];
+      if (nextToken && UNIT_WORDS.has(nextToken)) {
+        // "6 inch turkey" is a size, not six servings: drop the measurement
+        // and keep a single serving.
+        text = remainder.slice(remainder.toLowerCase().indexOf(nextToken) + nextToken.length).trim() || remainder;
+        break;
+      }
     }
+    quantity = pick(match);
+    text = remainder;
+    break;
   }
 
   let tokens = normalizeText(text).split(' ').filter(Boolean);
