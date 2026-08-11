@@ -1,6 +1,6 @@
 # Fare
 
-Fare is Harsh Dave's private, local-first calorie and macro tracker, published at `harsh.bet/fare/`. This repository is the standalone source for the app and its GitHub Pages deployment.
+Fare is a private, local-first calorie and macro tracker, published at `harsh.bet/fare/`. This repository is the standalone source for the app and its GitHub Pages deployment.
 
 ## Product model
 

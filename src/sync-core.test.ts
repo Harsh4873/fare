@@ -81,7 +81,7 @@ describe('deterministic last-write-wins', () => {
 describe('Fare state merge', () => {
   it('merges every singleton independently', () => {
     const local = makeState({
-      profile: { displayName: 'Harsh', onboardingComplete: true, updatedAt: LATER },
+      profile: { displayName: 'Test User', onboardingComplete: true, updatedAt: LATER },
       targets: { ...createStarterState(FIRST).targets, calories: 2_100, updatedAt: FIRST },
     });
     const remote = makeState({
@@ -89,7 +89,7 @@ describe('Fare state merge', () => {
       targets: { ...createStarterState(FIRST).targets, calories: 2_300, updatedAt: LATER },
     });
     const merged = mergeStates(local, remote);
-    expect(merged.profile.displayName).toBe('Harsh');
+    expect(merged.profile.displayName).toBe('Test User');
     expect(merged.targets.calories).toBe(2_300);
   });
 

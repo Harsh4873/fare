@@ -430,8 +430,8 @@ function ProfileView({ state, store, sync, onToast }: { state: FareState; store:
       <SectionHeading size="large" eyebrow="Private by default" title="Profile + data" description="Control targets, appearance, Google sync, and portable backups." />
       <div className="profile-grid">
         <Panel className="profile-card">
-          <div className="profile-avatar">{(state.profile.displayName || sync.user?.displayName || 'H').slice(0, 1).toUpperCase()}</div>
-          <h3 className="profile-name">{state.profile.displayName || sync.user?.displayName || 'Harsh'}</h3>
+          <div className="profile-avatar">{(state.profile.displayName || sync.user?.displayName || sync.user?.email || '?').slice(0, 1).toUpperCase()}</div>
+          <h3 className="profile-name">{state.profile.displayName || sync.user?.displayName || 'Your profile'}</h3>
           <p className="profile-email">{sync.user?.email ?? 'Stored only on this device'}</p>
           <div className={`sync-status sync-status--${sync.status === 'action-needed' ? 'error' : sync.status}`}><span className="sync-status__dot" />{sync.status === 'signed-out' ? 'Local only' : sync.status.replace('-', ' ')}</div>
           {sync.message && <p className="fine-print">{sync.message}</p>}
@@ -523,8 +523,8 @@ function SaveMealModal({ open, onClose, state, store, dateKey, onToast }: { open
 }
 
 function Onboarding({ state, store }: { state: FareState; store: FareStore }) {
-  const [name, setName] = useState(state.profile.displayName || 'Harsh');
-  return <Modal open={!state.profile.onboardingComplete} onClose={() => store.updateProfile({ displayName: name.trim(), onboardingComplete: true })} title="Welcome to Fare" description="Food memory that gets faster every time you use it." width="small" footer={<button type="button" className="button button--primary button--full" onClick={() => store.updateProfile({ displayName: name.trim(), onboardingComplete: true })}>Start logging</button>}><div className="onboarding-stack"><BrandMark size={76} /><div><span className="eyebrow">Private + local first</span><h3>Log once. Find it faster next time.</h3><p>Fare puts your Usuals ahead of the public database and preserves every logged nutrition snapshot.</p></div><label className="field"><span className="field__label">What should Fare call you?</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} /></label><div className="notice notice--warning">Starter targets are placeholders, not recommendations. Review them in Profile whenever you are ready.</div></div></Modal>;
+  const [name, setName] = useState(state.profile.displayName);
+  return <Modal open={!state.profile.onboardingComplete} onClose={() => store.updateProfile({ displayName: name.trim(), onboardingComplete: true })} title="Welcome to Fare" description="Food memory that gets faster every time you use it." width="small" footer={<button type="button" className="button button--primary button--full" onClick={() => store.updateProfile({ displayName: name.trim(), onboardingComplete: true })}>Start logging</button>}><div className="onboarding-stack"><BrandMark size={76} /><div><span className="eyebrow">Private + local first</span><h3>Log once. Find it faster next time.</h3><p>Fare puts your Usuals ahead of the public database and preserves every logged nutrition snapshot.</p></div><label className="field"><span className="field__label">What should Fare call you?</span><input className="input" value={name} placeholder="Your name" autoComplete="given-name" onChange={(event) => setName(event.target.value)} /></label><div className="notice notice--warning">Starter targets are placeholders, not recommendations. Review them in Profile whenever you are ready.</div></div></Modal>;
 }
 
 export default function App() {
