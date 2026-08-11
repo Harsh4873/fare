@@ -30,6 +30,7 @@ import { finishSafeSignOut } from './signout';
 import {
   isCloudSingleton,
   materializeCloudState,
+  resolveClockSkew,
   resolveInitialSync,
   serializeEntityDocument,
   serializeSingletonDocument,
@@ -37,6 +38,7 @@ import {
   type CloudSingletonDocuments,
   type CloudSingletonName,
 } from './sync-core';
+import { classifyRepairFailure, RepairScheduler, repairSignature } from './repair-guard';
 import { parseFareState, type FareMutation, type FareStore } from './store';
 
 const WRITE_BATCH_SIZE = 450;
@@ -169,6 +171,15 @@ export function useFareSync(store: FareStore): FareSync {
     let pendingWriteCount = 0;
     let bootstrapInFlight = false;
     let bootstrapSequence = 0;
+    let previousCloudState: FareState | null = null;
+    let repairRetryTimer: number | undefined;
+    const repairScheduler = new RepairScheduler();
+
+    function cancelRepairRetry() {
+      if (repairRetryTimer === undefined) return;
+      window.clearTimeout(repairRetryTimer);
+      repairRetryTimer = undefined;
+    }
 
     function showError(error: unknown) {
       if (disposed) return;
@@ -198,6 +209,9 @@ export function useFareSync(store: FareStore): FareSync {
 
     function stopAllListeners() {
       bootstrapSequence += 1;
+      cancelRepairRetry();
+      repairScheduler.reset();
+      previousCloudState = null;
       unsubscribes.forEach((unsubscribe) => unsubscribe());
       unsubscribes.clear();
       SINGLETON_COLLECTIONS.forEach((name) => {
@@ -308,6 +322,42 @@ export function useFareSync(store: FareStore): FareSync {
       if (activeUid && !mutationsPausedRef.current) queueMutation(activeUid, mutation);
     });
 
+    function scheduleRepairRetry(signature: string) {
+      if (disposed) return;
+      const delay = repairScheduler.nextAttemptDelay(signature, Date.now());
+      // A null delay means this repair has been given up on. Leaving it
+      // unscheduled is the whole point: the rejected write must not come back.
+      if (delay === null) return;
+      cancelRepairRetry();
+      repairRetryTimer = window.setTimeout(() => {
+        repairRetryTimer = undefined;
+        if (!disposed) maybeApplyCloudState();
+      }, delay);
+    }
+
+    /**
+     * Issues a repair unless this exact repair is already in flight, already
+     * refused, or still inside its backoff window. Returns whether a write was
+     * actually sent.
+     */
+    function issueRepair(repairs: PendingWrite[]) {
+      const signature = repairSignature(
+        repairs.map(({ reference, data }) => ({ path: reference.path, data })),
+      );
+      if (!repairScheduler.shouldAttempt(signature, Date.now())) {
+        scheduleRepairRetry(signature);
+        return false;
+      }
+      repairScheduler.markInFlight(signature);
+      void trackWrite(commitWrites(repairs))
+        .then(() => repairScheduler.recordSuccess(signature))
+        .catch((error) => {
+          repairScheduler.recordFailure(signature, classifyRepairFailure(error), Date.now());
+          scheduleRepairRetry(signature);
+        });
+      return true;
+    }
+
     function maybeApplyCloudState() {
       const singletonsReady = SINGLETON_COLLECTIONS.every((name) => singletonReady[name]);
       const entitiesReady = ENTITY_COLLECTIONS.every((name) => entityReady[name]);
@@ -322,7 +372,13 @@ export function useFareSync(store: FareStore): FareSync {
           entityDocuments.entries,
           local,
         ));
-        const resolution = resolveInitialSync(local, cloud);
+        // Correct for clock skew before merging: a device running slow must
+        // still be able to win with a genuinely newer edit, or its changes are
+        // rolled back on every snapshot and it repairs the same divergence
+        // forever.
+        const corrected = resolveClockSkew(local, cloud, previousCloudState);
+        previousCloudState = cloud;
+        const resolution = resolveInitialSync(corrected, cloud);
         const merged = resolution.state;
         if (stableStringify(merged) !== stableStringify(local)) {
           localStateRef.current = merged;
@@ -349,10 +405,7 @@ export function useFareSync(store: FareStore): FareSync {
             ...entityWrites(activeUid, 'meals', resolution.uploadMeals),
             ...entityWrites(activeUid, 'entries', resolution.uploadEntries),
           ];
-          if (repairs.length > 0) {
-            void trackWrite(commitWrites(repairs)).catch(() => undefined);
-            return;
-          }
+          if (repairs.length > 0 && issueRepair(repairs)) return;
         }
 
         const currentHasPendingWrites = pendingWriteCount > 0
@@ -365,6 +418,9 @@ export function useFareSync(store: FareStore): FareSync {
         } else if (currentHasPendingWrites) {
           setStatus('syncing');
           setMessage(undefined);
+        } else if (repairScheduler.hasAbandonedRepairs()) {
+          setStatus('action-needed');
+          setMessage('Fare stopped retrying a change the cloud refused. Your local log is safe — sign out and back in if this keeps showing.');
         } else {
           markSynced();
         }
@@ -531,6 +587,9 @@ export function useFareSync(store: FareStore): FareSync {
     }
 
     function handleOnline() {
+      // Reconnecting is new information for a repair that failed on the
+      // network, but not for one the ruleset refused.
+      repairScheduler.clearTransientBackoff();
       if (activeUserRef.current && unsubscribes.size > 0) {
         setStatus('syncing');
         setMessage(undefined);

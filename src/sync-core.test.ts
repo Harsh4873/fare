@@ -5,15 +5,19 @@ import {
   materializeCloudState,
   mergeStates,
   omitUndefinedDeep,
+  resolveClockSkew,
   resolveInitialSync,
   selectNewer,
   serializeEntityDocument,
   serializeSingletonDocument,
   stableStringify,
+  timestampAfter,
 } from './sync-core';
 
 const FIRST = '2026-07-01T10:00:00.000Z';
 const LATER = '2026-07-02T10:00:00.000Z';
+/** What a device whose clock runs an hour fast would stamp at FIRST. */
+const FAST_CLOCK = '2026-07-01T11:00:00.000Z';
 
 function makeFood(overrides: Partial<Food> = {}): Food {
   return {
@@ -75,6 +79,98 @@ describe('deterministic last-write-wins', () => {
     const edit = makeFood({ name: 'Edited', updatedAt: FIRST });
     const deletion = makeFood({ deleted: true, deletedAt: LATER, updatedAt: LATER });
     expect(selectNewer(edit, deletion).deleted).toBe(true);
+  });
+
+  it('treats deletion as terminal even against a newer clock reading', () => {
+    // The shared ruleset refuses any update that clears `deleted: true`, so a
+    // merge that resurrects a tombstone can only produce a rejected write.
+    const deletion = makeFood({ deleted: true, deletedAt: FIRST, updatedAt: FIRST });
+    const resurrection = makeFood({ name: 'Back from the dead', updatedAt: LATER });
+    expect(selectNewer(resurrection, deletion).deleted).toBe(true);
+    expect(selectNewer(deletion, resurrection).deleted).toBe(true);
+  });
+});
+
+describe('clock skew defence', () => {
+  it('stamps strictly past every reading it has seen', () => {
+    const stamp = timestampAfter(FIRST, Date.parse(LATER));
+    expect(Date.parse(stamp)).toBeGreaterThan(Date.parse(LATER));
+    expect(Date.parse(timestampAfter(undefined, 'not a date'))).toBeGreaterThanOrEqual(Date.now() - 1_000);
+  });
+
+  it('lifts a genuine local edit past a faster device instead of losing forever', () => {
+    // The remote record was written by a device an hour ahead. Without the
+    // bump this edit loses every merge and is rolled back on every snapshot.
+    const previousRemote = makeState({ foods: [makeFood({ name: 'Shared' })] });
+    const incomingRemote = makeState({ foods: [makeFood({ name: 'Fast device', updatedAt: FAST_CLOCK })] });
+    const local = makeState({ foods: [makeFood({ name: 'Slow device edit', updatedAt: FIRST })] });
+
+    const corrected = resolveClockSkew(local, incomingRemote, previousRemote);
+    expect(Date.parse(corrected.foods[0].updatedAt)).toBeGreaterThan(Date.parse(FAST_CLOCK));
+    expect(mergeStates(corrected, incomingRemote).foods[0].name).toBe('Slow device edit');
+  });
+
+  it('leaves the cloud copy and the last adopted snapshot alone', () => {
+    const remoteFood = makeFood({ name: 'Fast device', updatedAt: FAST_CLOCK });
+    const incomingRemote = makeState({ foods: [remoteFood] });
+
+    // Nothing changed locally: the local copy still is the cloud copy.
+    const unchanged = resolveClockSkew(makeState({ foods: [remoteFood] }), incomingRemote, makeState());
+    expect(unchanged.foods[0].updatedAt).toBe(FAST_CLOCK);
+
+    // The local copy is the snapshot this device last adopted, so a newer
+    // remote edit must still win.
+    const adopted = makeState({ foods: [makeFood({ name: 'Adopted', updatedAt: FIRST })] });
+    const settled = resolveClockSkew(adopted, incomingRemote, adopted);
+    expect(settled.foods[0].updatedAt).toBe(FIRST);
+    expect(mergeStates(settled, incomingRemote).foods[0].name).toBe('Fast device');
+  });
+
+  it('never lifts a record past a remote tombstone', () => {
+    const previousRemote = makeState({ foods: [makeFood({ name: 'Shared' })] });
+    const incomingRemote = makeState({
+      foods: [makeFood({ deleted: true, deletedAt: FAST_CLOCK, updatedAt: FAST_CLOCK })],
+    });
+    const local = makeState({ foods: [makeFood({ name: 'Still here', updatedAt: FIRST })] });
+
+    const corrected = resolveClockSkew(local, incomingRemote, previousRemote);
+    expect(corrected.foods[0].updatedAt).toBe(FIRST);
+  });
+
+  it('adopts the first snapshot as-is because nothing counts as a local change yet', () => {
+    const local = makeState({ foods: [makeFood({ name: 'Local', updatedAt: FIRST })] });
+    const incomingRemote = makeState({ foods: [makeFood({ name: 'Remote', updatedAt: FAST_CLOCK })] });
+    expect(resolveClockSkew(local, incomingRemote, null)).toBe(local);
+  });
+});
+
+describe('rejected repairs are never generated', () => {
+  it('produces no upload when a fast clock would resurrect a cloud tombstone', () => {
+    // A6: the client used to re-derive this repair from every clean snapshot,
+    // the ruleset refused it every time, and the divergence never resolved.
+    const cloud = makeState({
+      foods: [makeFood({ deleted: true, deletedAt: FIRST, updatedAt: FIRST })],
+    });
+    const local = makeState({ foods: [makeFood({ name: 'Fast clock copy', updatedAt: FAST_CLOCK })] });
+
+    const corrected = resolveClockSkew(local, cloud, cloud);
+    const resolution = resolveInitialSync(corrected, cloud);
+
+    expect(resolution.uploadFoods).toEqual([]);
+    expect(resolution.state.foods[0].deleted).toBe(true);
+
+    // The client has adopted the tombstone, so the next snapshot is clean too.
+    const settled = resolveInitialSync(resolveClockSkew(resolution.state, cloud, cloud), cloud);
+    expect(settled.uploadFoods).toEqual([]);
+  });
+
+  it('still uploads a local deletion, which the ruleset allows', () => {
+    const cloud = makeState({ foods: [makeFood({ name: 'Live', updatedAt: FIRST })] });
+    const local = makeState({
+      foods: [makeFood({ deleted: true, deletedAt: LATER, updatedAt: LATER })],
+    });
+    const resolution = resolveInitialSync(local, cloud);
+    expect(resolution.uploadFoods.map((food) => food.deleted)).toEqual([true]);
   });
 });
 

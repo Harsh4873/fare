@@ -62,8 +62,43 @@ function timestampValue(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** LWW with a canonical JSON tie-break, making the result argument-order independent. */
+/** A record carrying `deleted: true` — the terminal state for an entity. */
+export function isTombstone(value: unknown): boolean {
+  return Boolean(value)
+    && typeof value === 'object'
+    && (value as { deleted?: unknown }).deleted === true;
+}
+
+/**
+ * Returns an ISO stamp strictly newer than every reading supplied, and never
+ * older than this device's own clock.
+ *
+ * Comparing raw local clocks lets a device running fast win every conflict
+ * forever: slower devices keep minting older stamps, so their edits are rolled
+ * back on every snapshot. Stamping a local change past the newest reading the
+ * device has actually observed keeps last-write-wins self-healing.
+ */
+export function timestampAfter(...values: Array<number | string | undefined>): string {
+  const newest = values.reduce<number>((current, value) => {
+    const parsed = typeof value === 'number' ? value : value ? Date.parse(value) : NaN;
+    return Number.isFinite(parsed) ? Math.max(current, parsed + 1) : current;
+  }, Date.now());
+  return new Date(newest).toISOString();
+}
+
+/**
+ * LWW with a canonical JSON tie-break, making the result argument-order
+ * independent.
+ *
+ * Deletion is terminal: the shared ruleset refuses any update that clears an
+ * existing `deleted: true`, so a merge that resurrects a tombstone can only
+ * produce a write the server rejects. A tombstone therefore absorbs a live
+ * record whatever clock reading the live record carries.
+ */
 export function selectNewer<T extends Stamped>(left: T, right: T): T {
+  const leftDeleted = isTombstone(left);
+  const rightDeleted = isTombstone(right);
+  if (leftDeleted !== rightDeleted) return leftDeleted ? left : right;
   const leftTime = timestampValue(left.updatedAt);
   const rightTime = timestampValue(right.updatedAt);
   if (leftTime !== rightTime) return leftTime > rightTime ? left : right;
@@ -91,6 +126,68 @@ export function mergeStates(local: FareState, remote: FareState): FareState {
     foods: mergeById(local.foods, remote.foods),
     meals: mergeById(local.meals, remote.meals),
     entries: mergeById(local.entries, remote.entries),
+  };
+}
+
+/**
+ * Bump one local record past a remote reading minted by a faster clock.
+ *
+ * Only a genuine local change qualifies: a copy that still matches the cloud,
+ * or that matches the snapshot this device last adopted, is not a local edit
+ * and must lose normally. A remote tombstone is never overtaken, because
+ * deletion is terminal and the ruleset would reject the resurrection.
+ */
+function adjustForClockSkew<T extends Stamped>(
+  local: T,
+  incomingRemote: T | undefined,
+  previousRemote: T | undefined,
+): T {
+  if (!incomingRemote || isTombstone(incomingRemote)) return local;
+  const localText = stableStringify(local);
+  if (localText === stableStringify(incomingRemote)) return local;
+  if (previousRemote && localText === stableStringify(previousRemote)) return local;
+  if (timestampValue(local.updatedAt) > timestampValue(incomingRemote.updatedAt)) return local;
+  return { ...local, updatedAt: timestampAfter(local.updatedAt, incomingRemote.updatedAt) };
+}
+
+function byId<T extends { id: string }>(items: T[]): Map<string, T> {
+  return new Map(items.map((item) => [item.id, item]));
+}
+
+function adjustCollectionForClockSkew<T extends Stamped & { id: string }>(
+  local: T[],
+  incomingRemote: T[],
+  previousRemote: T[] | null,
+): T[] {
+  const incomingById = byId(incomingRemote);
+  const previousById = previousRemote ? byId(previousRemote) : null;
+  return local.map((item) => adjustForClockSkew(
+    item,
+    incomingById.get(item.id),
+    previousById?.get(item.id),
+  ));
+}
+
+/**
+ * Correct local stamps before merging so a device with a fast clock cannot own
+ * every record permanently. `previousRemote` is the snapshot this device last
+ * adopted; without one there is nothing to call a local change yet, so the
+ * first snapshot after connecting is adopted as-is.
+ */
+export function resolveClockSkew(
+  local: FareState,
+  incomingRemote: FareState,
+  previousRemote: FareState | null,
+): FareState {
+  if (!previousRemote) return local;
+  return {
+    ...local,
+    profile: adjustForClockSkew(local.profile, incomingRemote.profile, previousRemote.profile),
+    targets: adjustForClockSkew(local.targets, incomingRemote.targets, previousRemote.targets),
+    settings: adjustForClockSkew(local.settings, incomingRemote.settings, previousRemote.settings),
+    foods: adjustCollectionForClockSkew(local.foods, incomingRemote.foods, previousRemote.foods),
+    meals: adjustCollectionForClockSkew(local.meals, incomingRemote.meals, previousRemote.meals),
+    entries: adjustCollectionForClockSkew(local.entries, incomingRemote.entries, previousRemote.entries),
   };
 }
 
