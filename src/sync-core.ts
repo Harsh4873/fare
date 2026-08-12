@@ -62,6 +62,42 @@ function timestampValue(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/** Latest conflict-ordering stamp persisted anywhere in a Fare state. */
+export function latestStateTimestamp(state: FareState): number {
+  let latest = Math.max(
+    timestampValue(state.profile.updatedAt),
+    timestampValue(state.targets.updatedAt),
+    timestampValue(state.settings.updatedAt),
+  );
+  for (const entity of [...state.foods, ...state.meals, ...state.entries]) {
+    latest = Math.max(
+      latest,
+      timestampValue(entity.createdAt),
+      timestampValue(entity.updatedAt),
+      entity.deletedAt ? timestampValue(entity.deletedAt) : 0,
+    );
+  }
+  return latest;
+}
+
+/**
+ * Mint a local mutation stamp after every cloud or local value this persisted
+ * state has observed. Because the future reading lives in the state itself,
+ * the logical clock survives reloads and offline/rebootstrap cycles.
+ */
+export function timestampAfterStates(
+  states: readonly FareState[],
+  deviceNow = Date.now(),
+): string {
+  let latest = Number.isFinite(deviceNow) ? Math.floor(deviceNow) : 0;
+  for (const state of states) latest = Math.max(latest, latestStateTimestamp(state) + 1);
+  return new Date(latest).toISOString();
+}
+
+export function timestampAfterState(state: FareState, deviceNow = Date.now()): string {
+  return timestampAfterStates([state], deviceNow);
+}
+
 /** A record carrying `deleted: true` — the terminal state for an entity. */
 export function isTombstone(value: unknown): boolean {
   return Boolean(value)

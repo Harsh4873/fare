@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createStarterState, type FareState, type Food } from './model';
 import {
   isCloudSingleton,
+  latestStateTimestamp,
   materializeCloudState,
   mergeStates,
   omitUndefinedDeep,
@@ -12,6 +13,7 @@ import {
   serializeSingletonDocument,
   stableStringify,
   timestampAfter,
+  timestampAfterState,
 } from './sync-core';
 
 const FIRST = '2026-07-01T10:00:00.000Z';
@@ -96,6 +98,28 @@ describe('clock skew defence', () => {
     const stamp = timestampAfter(FIRST, Date.parse(LATER));
     expect(Date.parse(stamp)).toBeGreaterThan(Date.parse(LATER));
     expect(Date.parse(timestampAfter(undefined, 'not a date'))).toBeGreaterThanOrEqual(Date.now() - 1_000);
+  });
+
+  it('keeps an offline edit newer after a future cloud state is persisted and reloaded', () => {
+    const fastCloud = makeState({
+      profile: {
+        ...createStarterState(FIRST).profile,
+        displayName: 'Fast device',
+        updatedAt: FAST_CLOCK,
+      },
+      foods: [makeFood({ name: 'Shared', updatedAt: FAST_CLOCK })],
+    });
+    // JSON round-trip models closing the app and hydrating the same observed
+    // state later while the device clock is still slow.
+    const reloaded = JSON.parse(JSON.stringify(fastCloud)) as FareState;
+    const editStamp = timestampAfterState(reloaded, Date.parse(FIRST));
+    const offlineEdit = {
+      ...reloaded,
+      foods: [makeFood({ name: 'Offline edit', updatedAt: editStamp })],
+    };
+
+    expect(Date.parse(editStamp)).toBeGreaterThan(latestStateTimestamp(fastCloud));
+    expect(resolveInitialSync(offlineEdit, fastCloud).state.foods[0].name).toBe('Offline edit');
   });
 
   it('lifts a genuine local edit past a faster device instead of losing forever', () => {

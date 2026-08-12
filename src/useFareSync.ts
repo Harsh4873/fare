@@ -39,6 +39,7 @@ import {
   type CloudSingletonName,
 } from './sync-core';
 import { classifyRepairFailure, RepairScheduler, repairSignature } from './repair-guard';
+import { syncAccountProblem, type SyncAccountProblem } from './sync-account';
 import { parseFareState, type FareMutation, type FareStore } from './store';
 
 const WRITE_BATCH_SIZE = 450;
@@ -84,6 +85,27 @@ function friendlySyncError(error: unknown) {
   return error instanceof Error ? error.message : 'Fare could not finish syncing. Your local data is still safe.';
 }
 
+function accountProblemMessage(problem: SyncAccountProblem): string {
+  if (problem === 'missing-email') return 'Use a Google account with an email address to sync Fare.';
+  if (problem === 'unverified-email') return 'Use a verified Google account to sync Fare.';
+  return 'Fare syncs only sessions signed in with Google. Sign in again with the Google button.';
+}
+
+async function describeAccountProblem(user: User): Promise<string | null> {
+  let signInProvider: string | null | undefined;
+  try {
+    signInProvider = (await user.getIdTokenResult()).signInProvider ?? null;
+  } catch {
+    signInProvider = undefined;
+  }
+  const problem = syncAccountProblem({
+    email: user.email,
+    emailVerified: user.emailVerified,
+    signInProvider,
+  });
+  return problem ? accountProblemMessage(problem) : null;
+}
+
 function withEntityChanges<T extends { id: string }>(existing: T[], changes: T[]): T[] {
   const merged = new Map(existing.map((item) => [item.id, item]));
   changes.forEach((item) => merged.set(item.id, item));
@@ -117,6 +139,7 @@ export function useFareSync(store: FareStore): FareSync {
   const localStateRef = useRef(store.state);
   const activeUserRef = useRef<User | null>(null);
   const mutationsPausedRef = useRef(false);
+  const blockedAccountMessageRef = useRef<string | null>(null);
   const stopAllListenersRef = useRef<() => void>(() => undefined);
   const bootstrapActiveUserRef = useRef<() => void>(() => undefined);
   const otherTabsOpenRef = useRef<() => Promise<boolean>>(async () => false);
@@ -171,6 +194,7 @@ export function useFareSync(store: FareStore): FareSync {
     let pendingWriteCount = 0;
     let bootstrapInFlight = false;
     let bootstrapSequence = 0;
+    let authSequence = 0;
     let previousCloudState: FareState | null = null;
     let repairRetryTimer: number | undefined;
     const repairScheduler = new RepairScheduler();
@@ -556,30 +580,44 @@ export function useFareSync(store: FareStore): FareSync {
       if (activeUserRef.current) void bootstrap(activeUserRef.current);
     };
 
-    const unsubscribeAuth = onAuthStateChanged(firebaseAuth, (authUser) => {
-      if (disposed) return;
-      stopAllListeners();
-      activeUid = null;
+    async function startSession(authUser: User, sequence: number) {
+      const problem = await describeAccountProblem(authUser);
+      if (disposed || sequence !== authSequence) return;
+      if (problem) {
+        activeUid = null;
+        blockedAccountMessageRef.current = problem;
+        setStatus('action-needed');
+        setMessage(problem);
+        await firebaseSignOut(firebaseAuth).catch(() => undefined);
+        return;
+      }
+
       activeUserRef.current = authUser;
       setUser(authUser);
-
-      if (!authUser) {
-        setStatus(navigator.onLine ? 'signed-out' : 'offline');
-        setMessage(navigator.onLine
-          ? 'Sign in once on this device to turn on automatic sync.'
-          : 'You are offline. Local calorie tracking is still available.');
-        return;
-      }
-      if (!authUser.emailVerified) {
-        setStatus('action-needed');
-        setMessage('Use a verified Google account to sync Fare.');
-        void firebaseSignOut(firebaseAuth);
-        return;
-      }
-
       activeUid = authUser.uid;
       mutationsPausedRef.current = false;
       void bootstrap(authUser);
+    }
+
+    const unsubscribeAuth = onAuthStateChanged(firebaseAuth, (authUser) => {
+      if (disposed) return;
+      const sequence = ++authSequence;
+      stopAllListeners();
+      activeUid = null;
+      activeUserRef.current = null;
+      setUser(null);
+
+      if (!authUser) {
+        const reason = blockedAccountMessageRef.current;
+        blockedAccountMessageRef.current = null;
+        setStatus(reason ? 'action-needed' : navigator.onLine ? 'signed-out' : 'offline');
+        setMessage(reason ?? (navigator.onLine
+          ? 'Sign in once on this device to turn on automatic sync.'
+          : 'You are offline. Local calorie tracking is still available.'));
+        return;
+      }
+
+      void startSession(authUser, sequence);
     });
 
     function handleOffline() {
@@ -606,6 +644,7 @@ export function useFareSync(store: FareStore): FareSync {
 
     return () => {
       disposed = true;
+      authSequence += 1;
       unsubscribeAuth();
       unsubscribeMutations();
       stopAllListeners();
@@ -629,9 +668,11 @@ export function useFareSync(store: FareStore): FareSync {
     try {
       await authPersistenceReady;
       const result = await signInWithPopup(firebaseAuth, googleProvider);
-      if (!result.user.emailVerified) {
+      const problem = await describeAccountProblem(result.user);
+      if (problem) {
+        blockedAccountMessageRef.current = problem;
         await firebaseSignOut(firebaseAuth);
-        throw new Error('Use a verified Google account to sync Fare.');
+        throw new Error(problem);
       }
     } catch (error) {
       setStatus('action-needed');

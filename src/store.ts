@@ -19,7 +19,12 @@ import {
   type Serving,
 } from './model';
 import { scaleNutrition } from './nutrition';
-import { mergeStates, stableStringify } from './sync-core';
+import {
+  mergeStates,
+  stableStringify,
+  timestampAfterState,
+  timestampAfterStates,
+} from './sync-core';
 
 const LOCAL_KEY = 'fare-state-v1';
 const RECOVERY_PREFIX = 'fare-recovery-';
@@ -478,7 +483,7 @@ export function useFareStore(): FareStore {
   const addFood = useCallback((draft: NewFood) => {
     const current = stateRef.current;
     if (!current) return undefined;
-    const now = new Date().toISOString();
+    const now = timestampAfterState(current);
     const food: Food = { ...draft, id: createId('food'), createdAt: now, updatedAt: now };
     commit({ ...current, foods: [...current.foods, food] }, { type: 'foods', foods: [food] });
     return food;
@@ -489,7 +494,7 @@ export function useFareStore(): FareStore {
     if (!current) return;
     const existing = current.foods.find((food) => food.id === id && !food.deleted);
     if (!existing) return;
-    const nextFood: Food = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+    const nextFood: Food = { ...existing, ...patch, updatedAt: timestampAfterState(current) };
     commit({ ...current, foods: current.foods.map((food) => food.id === id ? nextFood : food) }, { type: 'foods', foods: [nextFood] });
   }, [commit]);
 
@@ -497,14 +502,14 @@ export function useFareStore(): FareStore {
     const current = stateRef.current;
     const existing = current?.foods.find((food) => food.id === id && !food.deleted);
     if (!current || !existing) return;
-    const tombstone = makeTombstone(existing, new Date().toISOString());
+    const tombstone = makeTombstone(existing, timestampAfterState(current));
     commit({ ...current, foods: current.foods.map((food) => food.id === id ? tombstone : food) }, { type: 'foods', foods: [tombstone] });
   }, [commit]);
 
   const addMeal = useCallback((draft: NewMeal) => {
     const current = stateRef.current;
     if (!current) return undefined;
-    const now = new Date().toISOString();
+    const now = timestampAfterState(current);
     const meal: SavedMeal = { ...draft, id: createId('meal'), createdAt: now, updatedAt: now };
     commit({ ...current, meals: [...current.meals, meal] }, { type: 'meals', meals: [meal] });
     return meal;
@@ -514,7 +519,7 @@ export function useFareStore(): FareStore {
     const current = stateRef.current;
     const existing = current?.meals.find((meal) => meal.id === id && !meal.deleted);
     if (!current || !existing) return;
-    const nextMeal: SavedMeal = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+    const nextMeal: SavedMeal = { ...existing, ...patch, updatedAt: timestampAfterState(current) };
     commit({ ...current, meals: current.meals.map((meal) => meal.id === id ? nextMeal : meal) }, { type: 'meals', meals: [nextMeal] });
   }, [commit]);
 
@@ -522,14 +527,14 @@ export function useFareStore(): FareStore {
     const current = stateRef.current;
     const existing = current?.meals.find((meal) => meal.id === id && !meal.deleted);
     if (!current || !existing) return;
-    const tombstone = makeTombstone(existing, new Date().toISOString());
+    const tombstone = makeTombstone(existing, timestampAfterState(current));
     commit({ ...current, meals: current.meals.map((meal) => meal.id === id ? tombstone : meal) }, { type: 'meals', meals: [tombstone] });
   }, [commit]);
 
   const addEntry = useCallback((draft: NewEntry) => {
     const current = stateRef.current;
     if (!current) return undefined;
-    const now = new Date().toISOString();
+    const now = timestampAfterState(current);
     const entry: FoodEntry = { ...draft, id: createId('entry'), createdAt: now, updatedAt: now };
     commit({ ...current, entries: [...current.entries, entry] }, { type: 'entries', entries: [entry] });
     return entry;
@@ -539,7 +544,7 @@ export function useFareStore(): FareStore {
     const current = stateRef.current;
     const existing = current?.entries.find((entry) => entry.id === id && !entry.deleted);
     if (!current || !existing) return;
-    const nextEntry: FoodEntry = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+    const nextEntry: FoodEntry = { ...existing, ...patch, updatedAt: timestampAfterState(current) };
     commit({ ...current, entries: current.entries.map((entry) => entry.id === id ? nextEntry : entry) }, { type: 'entries', entries: [nextEntry] });
   }, [commit]);
 
@@ -547,7 +552,7 @@ export function useFareStore(): FareStore {
     const current = stateRef.current;
     const existing = current?.entries.find((entry) => entry.id === id && !entry.deleted);
     if (!current || !existing) return;
-    const tombstone = makeTombstone(existing, new Date().toISOString());
+    const tombstone = makeTombstone(existing, timestampAfterState(current));
     commit({ ...current, entries: current.entries.map((entry) => entry.id === id ? tombstone : entry) }, { type: 'entries', entries: [tombstone] });
   }, [commit]);
 
@@ -569,8 +574,8 @@ export function useFareStore(): FareStore {
   const logMeal = useCallback((meal: SavedMeal, options: LogMealOptions) => {
     const current = stateRef.current;
     if (!current || meal.deleted) return [];
-    const now = new Date().toISOString();
-    const consumedAt = options.consumedAt ?? now;
+    const now = timestampAfterState(current);
+    const consumedAt = options.consumedAt ?? new Date().toISOString();
     const entries = meal.items.map((item): FoodEntry => ({
       id: createId('entry'),
       createdAt: now,
@@ -600,8 +605,9 @@ export function useFareStore(): FareStore {
     const current = stateRef.current;
     if (!current) return [];
     const source = current.entries.filter((entry) => !entry.deleted && entry.dateKey === fromDateKey);
-    const now = new Date().toISOString();
-    const entries = source.map((entry): FoodEntry => ({ ...entry, id: createId('entry'), dateKey: toDateKey, consumedAt: now, createdAt: now, updatedAt: now }));
+    const now = timestampAfterState(current);
+    const consumedAt = new Date().toISOString();
+    const entries = source.map((entry): FoodEntry => ({ ...entry, id: createId('entry'), dateKey: toDateKey, consumedAt, createdAt: now, updatedAt: now }));
     if (entries.length) commit({ ...current, entries: [...current.entries, ...entries] }, { type: 'entries', entries });
     return entries;
   }, [commit]);
@@ -609,21 +615,21 @@ export function useFareStore(): FareStore {
   const updateProfile = useCallback((patch: Partial<Omit<FareProfile, 'updatedAt'>>) => {
     const current = stateRef.current;
     if (!current) return;
-    const profile = { ...current.profile, ...patch, updatedAt: new Date().toISOString() };
+    const profile = { ...current.profile, ...patch, updatedAt: timestampAfterState(current) };
     commit({ ...current, profile }, { type: 'profile', profile });
   }, [commit]);
 
   const updateTargets = useCallback((patch: Partial<Omit<NutritionTargets, 'updatedAt'>>) => {
     const current = stateRef.current;
     if (!current) return;
-    const targets = { ...current.targets, ...patch, updatedAt: new Date().toISOString() };
+    const targets = { ...current.targets, ...patch, updatedAt: timestampAfterState(current) };
     commit({ ...current, targets }, { type: 'targets', targets });
   }, [commit]);
 
   const updateSettings = useCallback((patch: Partial<Omit<FareSettings, 'updatedAt'>>) => {
     const current = stateRef.current;
     if (!current) return;
-    const settings = { ...current.settings, ...patch, updatedAt: new Date().toISOString() };
+    const settings = { ...current.settings, ...patch, updatedAt: timestampAfterState(current) };
     commit({ ...current, settings }, { type: 'settings', settings });
   }, [commit]);
 
@@ -631,7 +637,7 @@ export function useFareStore(): FareStore {
     const current = stateRef.current;
     if (!current) return;
     const parsed = parseFareState(incoming);
-    const now = new Date().toISOString();
+    const now = timestampAfterStates([current, parsed]);
     const replaceEntities = <T extends { id: string; createdAt: string; updatedAt: string }>(existing: T[], next: T[]) => {
       const ids = new Set(next.map((item) => item.id));
       return [
@@ -654,7 +660,7 @@ export function useFareStore(): FareStore {
   const resetState = useCallback(() => {
     const current = stateRef.current;
     if (!current) return;
-    const now = new Date().toISOString();
+    const now = timestampAfterState(current);
     const fresh = createStarterState(now);
     const state: FareState = {
       ...fresh,
