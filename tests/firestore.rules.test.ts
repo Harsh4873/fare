@@ -7,7 +7,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import { readFile } from 'node:fs/promises';
 import { collection, deleteDoc, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
-import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'vitest';
 
 const PROJECT_ID = 'demo-fare';
 const TEST_EMAIL = 'user.one@example.com';
@@ -37,6 +37,14 @@ describe.skipIf(!EMULATOR_ADDRESS)('combined Firestore security rules', () => {
     testEnvironment = await initializeTestEnvironment({
       projectId: PROJECT_ID,
       firestore: { host, port: Number(rawPort), rules },
+    });
+  });
+
+  beforeEach(async () => {
+    await testEnvironment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'owner_vault_members', OWNER_UID), {
+        vaultId: OWNER_UID, schemaVersion: 1, status: 'active', legacyWritesEnabled: false,
+      });
     });
   });
 
@@ -86,12 +94,12 @@ describe.skipIf(!EMULATOR_ADDRESS)('combined Firestore security rules', () => {
     await assertFails(deleteDoc(reference));
   });
 
-  it('allows another verified Google account to use its own UID-scoped workspace', async () => {
+  it('denies an unapproved verified Google account a Firebase workspace', async () => {
     const secondUid = 'second-fare-user';
     const firestore = authorizedContext(testEnvironment, secondUid, { email: 'someone@example.com' }).firestore();
     const profile = doc(firestore, 'fare_users', secondUid, 'profile', 'current');
-    await assertSucceeds(setDoc(profile, { updatedAt: STAMP }));
-    await assertSucceeds(getDoc(profile));
+    await assertFails(setDoc(profile, { updatedAt: STAMP }));
+    await assertFails(getDoc(profile));
   });
 
   it('rejects wrong uids, unverified users, non-Google providers, and anonymous access', async () => {

@@ -41,6 +41,7 @@ import {
 import { classifyRepairFailure, RepairScheduler, repairSignature } from './repair-guard';
 import { syncAccountProblem, type SyncAccountProblem } from './sync-account';
 import { parseFareState, type FareMutation, type FareStore } from './store';
+import { resolveOwnerVault } from './owner-vault';
 
 const WRITE_BATCH_SIZE = 450;
 const SINGLETON_COLLECTIONS = ['profile', 'targets', 'settings'] as const;
@@ -532,8 +533,10 @@ export function useFareSync(store: FareStore): FareSync {
       return { state, missingSingletons };
     }
 
-    async function bootstrap(authUser: User) {
+    async function bootstrap() {
       if (bootstrapInFlight || disposed) return;
+      const vaultId = activeUid;
+      if (!vaultId) return;
       const local = localStateRef.current;
       if (!local) return;
       bootstrapInFlight = true;
@@ -541,7 +544,7 @@ export function useFareSync(store: FareStore): FareSync {
       setStatus(navigator.onLine ? 'syncing' : 'offline');
       setMessage(undefined);
       try {
-        const cloud = await readCloudState(authUser.uid, local);
+        const cloud = await readCloudState(vaultId, local);
         if (disposed || sequence !== bootstrapSequence) return;
         // Local mutations remain available while the initial reads are in
         // flight. Resolve against the newest in-memory state, not the stale
@@ -554,20 +557,20 @@ export function useFareSync(store: FareStore): FareSync {
 
         const writes: PendingWrite[] = [
           ...(resolution.uploadProfile || cloud.missingSingletons.has('profile')
-            ? [singletonWrite(authUser.uid, 'profile', resolution.state.profile)] : []),
+            ? [singletonWrite(vaultId, 'profile', resolution.state.profile)] : []),
           ...(resolution.uploadTargets || cloud.missingSingletons.has('targets')
-            ? [singletonWrite(authUser.uid, 'targets', resolution.state.targets)] : []),
+            ? [singletonWrite(vaultId, 'targets', resolution.state.targets)] : []),
           ...(resolution.uploadSettings || cloud.missingSingletons.has('settings')
-            ? [singletonWrite(authUser.uid, 'settings', resolution.state.settings)] : []),
-          ...entityWrites(authUser.uid, 'foods', resolution.uploadFoods),
-          ...entityWrites(authUser.uid, 'meals', resolution.uploadMeals),
-          ...entityWrites(authUser.uid, 'entries', resolution.uploadEntries),
+            ? [singletonWrite(vaultId, 'settings', resolution.state.settings)] : []),
+          ...entityWrites(vaultId, 'foods', resolution.uploadFoods),
+          ...entityWrites(vaultId, 'meals', resolution.uploadMeals),
+          ...entityWrites(vaultId, 'entries', resolution.uploadEntries),
         ];
         if (writes.length > 0) {
           await trackWrite(commitWrites(writes));
           if (disposed || sequence !== bootstrapSequence) return;
         }
-        startListeners(authUser.uid);
+        startListeners(vaultId);
         if (navigator.onLine && pendingWriteCount === 0) markSynced();
         else updateConnectionStatus();
       } catch (error) {
@@ -577,7 +580,7 @@ export function useFareSync(store: FareStore): FareSync {
       }
     }
     bootstrapActiveUserRef.current = () => {
-      if (activeUserRef.current) void bootstrap(activeUserRef.current);
+      if (activeUserRef.current) void bootstrap();
     };
 
     async function startSession(authUser: User, sequence: number) {
@@ -592,11 +595,25 @@ export function useFareSync(store: FareStore): FareSync {
         return;
       }
 
+      let membership;
+      try {
+        membership = await resolveOwnerVault(fareFirestore, authUser);
+      } catch (error) {
+        if (disposed || sequence !== authSequence) return;
+        const reason = error instanceof Error ? error.message : 'This account cannot access the shared owner vault.';
+        activeUid = null;
+        blockedAccountMessageRef.current = reason;
+        setStatus('action-needed');
+        setMessage(reason);
+        return;
+      }
+      if (disposed || sequence !== authSequence) return;
+
       activeUserRef.current = authUser;
       setUser(authUser);
-      activeUid = authUser.uid;
+      activeUid = membership.vaultId;
       mutationsPausedRef.current = false;
-      void bootstrap(authUser);
+      void bootstrap();
     }
 
     const unsubscribeAuth = onAuthStateChanged(firebaseAuth, (authUser) => {
@@ -632,7 +649,7 @@ export function useFareSync(store: FareStore): FareSync {
         setStatus('syncing');
         setMessage(undefined);
       } else if (activeUserRef.current) {
-        void bootstrap(activeUserRef.current);
+        void bootstrap();
       } else {
         setStatus('signed-out');
         setMessage('Sign in once on this device to turn on automatic sync.');

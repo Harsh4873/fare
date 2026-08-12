@@ -39,7 +39,7 @@ The app does not display or redistribute product images. Public nutrition data r
 
 Foods, meal templates, and diary entries are individual Firestore documents under `fare_users/{uid}`. Profile, targets, and settings are independent singleton documents. Records merge by `updatedAt` with a deterministic tie-break, and deletes are durable tombstones so an offline device cannot resurrect them. Safe sign-out waits for pending writes before clearing this app's local copy and named Firestore cache.
 
-`firestore.rules` carries the complete shared ruleset for Gym, Daymark, Slate, Fare, Notes, Sift, and Recall because a Firebase rules deployment replaces the project-wide ruleset. Keep the file byte-identical across all six repositories. The Pages workflow does not deploy Firebase rules.
+Private sync resolves provisioned Google identities through one shared owner vault, so both approved identities see the same state and unprovisioned identities fail closed. `firestore.rules` carries the complete shared ruleset for every private harsh.bet app because a Firebase rules deployment replaces the project-wide ruleset. Keep the file byte-identical across all repositories. The Pages workflow does not deploy Firebase rules.
 
 ## Development
 
