@@ -3,6 +3,7 @@ import {
   normalizeOpenFoodFactsProduct,
   OpenFoodFactsClient,
   OpenFoodFactsRateLimitError,
+  rankOpenFoodFactsProducts,
 } from '../src/open-food-facts';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -124,7 +125,8 @@ describe('OpenFoodFactsClient', () => {
     const url = new URL(String(fetch.mock.calls[0][0]));
     expect(url.pathname).toBe('/cgi/search.pl');
     expect(url.searchParams.get('search_terms')).toBe('protein shake');
-    expect(url.searchParams.get('page_size')).toBe('5');
+    expect(url.searchParams.get('page_size')).toBe('13');
+    expect(url.searchParams.get('sort_by')).toBe('unique_scans_n');
     await expect(client.searchOnSubmit('x')).rejects.toThrow(/at least two/i);
   });
 
@@ -182,5 +184,21 @@ describe('OpenFoodFactsClient', () => {
     await expect(client.lookupBarcode('99999')).rejects.toBeInstanceOf(
       OpenFoodFactsRateLimitError,
     );
+  });
+
+  it('ranks complete, query-matching products ahead of sparse ones', () => {
+    const complete = normalizeOpenFoodFactsProduct({
+      ...rawProduct,
+      completeness: 0.95,
+    });
+    const sparse = normalizeOpenFoodFactsProduct({
+      code: '0000000000001',
+      product_name: 'Random shake',
+      completeness: 0.1,
+      nutriments: { 'energy-kcal_100g': 12 },
+    });
+    expect(complete && sparse).toBeTruthy();
+    const ranked = rankOpenFoodFactsProducts('protein shake', [sparse!, complete!]);
+    expect(ranked[0]?.barcode).toBe(rawProduct.code);
   });
 });

@@ -14,6 +14,7 @@ const SEARCH_FIELDS = [
   'brands',
   'serving_size',
   'serving_quantity',
+  'serving_quantity_unit',
   'product_quantity_unit',
   'nutriments',
   'image_front_small_url',
@@ -146,6 +147,41 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function text(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function brandName(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    const names = value.flatMap((item) => (text(item) ? [text(item) as string] : []));
+    return names.length > 0 ? names.join(', ') : undefined;
+  }
+  return text(value);
+}
+
+export function scoreOpenFoodFactsProduct(query: string, product: OpenFoodFactsProduct): number {
+  const tokens = query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+  const name = product.name.toLocaleLowerCase();
+  const brand = (product.brand ?? '').toLocaleLowerCase();
+  let score = (product.completeness ?? 0) * 24;
+  if (tokens.length > 0 && tokens.every((token) => name.includes(token) || brand.includes(token))) score += 36;
+  if (tokens[0] && name.startsWith(tokens[0])) score += 10;
+  if (product.provenance.dataQuality === 'verified') score += 28;
+  else if (product.provenance.dataQuality === 'complete') score += 20;
+  else if (product.provenance.dataQuality === 'partial') score += 6;
+  if (product.serving.label !== '100 g') score += 12;
+  if (product.name === 'Unknown product') score -= 40;
+  return score;
+}
+
+export function rankOpenFoodFactsProducts(
+  query: string,
+  products: readonly OpenFoodFactsProduct[],
+): OpenFoodFactsProduct[] {
+  const ranked = [...products].sort((left, right) => {
+    const delta = scoreOpenFoodFactsProduct(query, right) - scoreOpenFoodFactsProduct(query, left);
+    return delta !== 0 ? delta : left.name.localeCompare(right.name);
+  });
+  const withNutrition = ranked.filter((product) => product.provenance.dataQuality !== 'insufficient');
+  return withNutrition.length >= Math.min(4, ranked.length) ? withNutrition : ranked;
 }
 
 function number(value: unknown): number | undefined {
@@ -314,7 +350,7 @@ export function normalizeOpenFoodFactsProduct(
   return Object.freeze({
     barcode,
     name,
-    brand: text(product.brands),
+    brand: brandName(product.brands),
     imageUrl: text(product.image_front_small_url) ?? text(product.image_front_url),
     serving: Object.freeze({
       quantity: hasServingNutrition
@@ -413,7 +449,7 @@ export class OpenFoodFactsClient {
     if (query.length < 2) {
       throw new RangeError('Enter at least two characters before searching');
     }
-    const limit = Math.max(1, Math.min(20, Math.floor(options.limit ?? 10)));
+    const limit = Math.max(1, Math.min(24, Math.floor(options.limit ?? 16)));
     const cacheKey = `${query.toLocaleLowerCase()}|${limit}`;
     const cached = this.cached(this.searchCache, cacheKey);
     if (cached) return cached;
@@ -426,18 +462,20 @@ export class OpenFoodFactsClient {
     url.searchParams.set('search_simple', '1');
     url.searchParams.set('action', 'process');
     url.searchParams.set('json', '1');
-    url.searchParams.set('page_size', String(limit));
+    url.searchParams.set('page_size', String(Math.min(24, limit + 8)));
     url.searchParams.set('page', '1');
+    url.searchParams.set('sort_by', 'unique_scans_n');
     url.searchParams.set('fields', SEARCH_FIELDS);
     const payload = await this.getJson(url, options.signal);
     const response = asRecord(payload);
     const fetchedAt = new Date(this.now()).toISOString();
-    const products = responseProducts(payload)
-      .flatMap((raw) => {
+    const products = rankOpenFoodFactsProducts(
+      query,
+      responseProducts(payload).flatMap((raw) => {
         const product = normalizeOpenFoodFactsProduct(raw, fetchedAt);
         return product ? [product] : [];
-      })
-      .slice(0, limit);
+      }),
+    ).slice(0, limit);
     const result: OpenFoodFactsSearchResult = Object.freeze({
       query,
       products: Object.freeze(products),

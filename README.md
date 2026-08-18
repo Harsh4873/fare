@@ -27,11 +27,11 @@ All Breakdown math is pure TypeScript (`src/breakdown/engine.ts`, `optimize.ts`,
 
 ## Food data
 
-Fare searches personal history instantly. Public search happens only after an explicit request because Open Food Facts limits searches and specifically warns against search-as-you-type. Barcode reads use the current product endpoint. Every imported result keeps its source, serving basis, fetch time, and a data-quality note so it can be reviewed before logging.
+Fare searches personal history, USDA survey foods, and curated restaurant/pantry items as you type. Packaged-product search happens only after an explicit request because Open Food Facts limits searches and specifically warns against search-as-you-type. Barcode reads use the current product endpoint. Every imported result keeps its source, serving basis, fetch time, and a data-quality note so it can be reviewed before logging.
 
+- USDA FoodData Central FNDDS 2021–2023 is bundled locally (public domain). The browser never calls the USDA API: <https://fdc.nal.usda.gov/download-datasets/>
 - Open Food Facts API: <https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/>
 - Open Food Facts database licensing/attribution: <https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/tutorials/license-be-on-the-legal-side/>
-- USDA FoodData Central is not called from the browser because its API key must remain private: <https://fdc.nal.usda.gov/api-guide/>
 
 The app does not display or redistribute product images. Public nutrition data remains visually separated from the private diary and saved-food collection.
 

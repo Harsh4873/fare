@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AddFoodSheet } from './components/AddFoodSheet';
+import { ServingAmount } from './components/ServingAmount';
 import { BreakdownView } from './breakdown/BreakdownView';
 import { addDays, dateRange, fromDateKey, toDateKey } from './dates';
 import { rankUsuals } from './memory';
@@ -107,6 +108,8 @@ function formatNumber(value: number, digits = 0) {
 function sourceBadge(entry: FoodEntry) {
   const kind = entry.snapshot.provenance.kind;
   if (kind === 'open-food-facts') return <SourceBadge source="database" label="Community label" />;
+  if (kind === 'usda') return <SourceBadge source="database" label="USDA" />;
+  if (kind === 'restaurant-guide') return <SourceBadge source="verified" label={entry.snapshot.provenance.providerName} />;
   if (kind === 'manual') return <SourceBadge source="custom" label="Custom" />;
   return <SourceBadge source="history" label="Your history" />;
 }
@@ -480,7 +483,7 @@ function ProfileView({ state, store, sync, onToast }: { state: FareState; store:
           <div><Archive /><strong>Immutable diary</strong><span>External food updates and saved-food edits never rewrite past entries.</span></div>
           <div><CloudOff /><strong>Local first</strong><span>Logging works offline; pending changes reconcile after reconnecting.</span></div>
         </div>
-        <p className="fine-print">Packaged-food data comes from Open Food Facts under its database/content licenses and may be incomplete. Compare community data with the package label. Fare provides tracking tools, not medical advice.</p>
+        <p className="fine-print">Generic foods come from USDA FoodData Central (public domain). Packaged-food data comes from Open Food Facts under its database/content licenses and may be incomplete. Compare community data with the package label. Fare provides tracking tools, not medical advice.</p>
       </Panel>
     </div>
   );
@@ -506,7 +509,7 @@ function EntryEditor({ entry, store, onClose }: { entry: FoodEntry | null; store
     });
     onClose();
   }}>Save changes</button></>}>
-    {entry && <div className="form-grid"><label className="field"><span className="field__label">Servings</span><input className="input" type="number" min="0.01" step="0.25" value={servings} onChange={(event) => setServings(Number(event.target.value))} /></label><label className="field"><span className="field__label">Meal</span><select className="select" value={mealSlot} onChange={(event) => setMealSlot(event.target.value as MealSlot)}>{MEALS.map((meal) => <option value={meal.id} key={meal.id}>{meal.label}</option>)}</select></label><label className="field form-grid__full"><span className="field__label">Note <span className="field__optional">optional</span></span><textarea className="textarea" value={note} onChange={(event) => setNote(event.target.value)} /></label><div className="form-grid__full notice"><strong>Updated total</strong> {formatNumber(entry.snapshot.nutritionPerServing.calories * Math.max(0, servings))} kcal</div></div>}
+    {entry && <div className="form-grid"><div className="form-grid__full"><ServingAmount value={servings} onChange={setServings} servingLabel={entry.snapshot.serving.label} nutrition={entry.snapshot.nutritionPerServing} /></div><label className="field"><span className="field__label">Meal</span><select className="select" value={mealSlot} onChange={(event) => setMealSlot(event.target.value as MealSlot)}>{MEALS.map((meal) => <option value={meal.id} key={meal.id}>{meal.label}</option>)}</select></label><label className="field form-grid__full"><span className="field__label">Note <span className="field__optional">optional</span></span><textarea className="textarea" value={note} onChange={(event) => setNote(event.target.value)} /></label></div>}
   </Modal>;
 }
 

@@ -2,9 +2,9 @@
  * Small shared presentational pieces for the Breakdown feature.
  */
 
-import { Minus, Plus } from 'lucide-react';
 import type { Nutrition } from '../model';
-import { IconButton, cx } from '../ui';
+import { formatServingCount } from '../components/ServingAmount';
+import { cx } from '../ui';
 import { confidenceCopy, formatSigned } from './engine';
 import type { Confidence, MetricKey } from './types';
 
@@ -95,26 +95,19 @@ export interface QuantityStepperProps {
 }
 
 export function QuantityStepper({ value, onChange, label, min = 0.5, max = 12, step = 0.5 }: QuantityStepperProps) {
-  const decimals = value % 1 === 0 ? 0 : 1;
   return (
-    <span className="qty-stepper" role="group" aria-label={`${label} servings`}>
-      <IconButton
-        label={`Fewer ${label}`}
-        size="small"
-        disabled={value - step < min - 1e-9}
-        onClick={() => onChange(Math.max(min, Math.round((value - step) * 100) / 100))}
-      >
-        <Minus />
-      </IconButton>
-      <span className="qty-stepper__value">×{formatNumber(value, decimals)}</span>
-      <IconButton
-        label={`More ${label}`}
-        size="small"
-        disabled={value + step > max + 1e-9}
-        onClick={() => onChange(Math.min(max, Math.round((value + step) * 100) / 100))}
-      >
-        <Plus />
-      </IconButton>
+    <span className="qty-stepper qty-stepper--spectrum" role="group" aria-label={`${label} amount`}>
+      <input
+        className="qty-stepper__range"
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        aria-label={`${label} amount`}
+        onChange={(event) => onChange(Math.round(Number(event.target.value) * 100) / 100)}
+      />
+      <span className="qty-stepper__value">{formatServingCount(value)}</span>
     </span>
   );
 }

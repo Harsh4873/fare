@@ -174,7 +174,7 @@ function parseServing(value: unknown): Serving {
 
 function parseProvenance(value: unknown): NutritionProvenance {
   const raw = object(value);
-  const kinds = ['manual', 'open-food-facts', 'saved-food', 'saved-meal'];
+  const kinds = ['manual', 'open-food-facts', 'usda', 'restaurant-guide', 'saved-food', 'saved-meal'];
   const qualities = ['verified', 'complete', 'partial', 'insufficient'];
   const kind = text(raw.kind, 'source kind');
   const dataQuality = text(raw.dataQuality, 'data quality');

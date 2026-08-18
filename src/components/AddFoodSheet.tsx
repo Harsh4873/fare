@@ -4,7 +4,6 @@ import {
   Clock3,
   Database,
   LoaderCircle,
-  Minus,
   PackageSearch,
   Plus,
   ScanBarcode,
@@ -23,6 +22,12 @@ import {
   useState,
 } from 'react';
 import { rankUsuals, type UsualSuggestion } from '../memory';
+import type { CatalogFood } from '../food-catalog/types';
+import {
+  loadUsdaCatalog,
+  searchLocalCatalog,
+  type LocalCatalogResults,
+} from '../food-catalog/search';
 import {
   createNutritionSnapshot,
   type FareState,
@@ -49,12 +54,15 @@ import {
   type SourceKind,
 } from '../ui';
 import { BarcodeScanner } from './BarcodeScanner';
+import { ServingAmount } from './ServingAmount';
 
 type Lane = 'usuals' | 'search' | 'quick' | 'custom' | 'meals';
 type LoadingKind = 'search' | 'barcode' | null;
 type Selection =
   | { kind: 'food'; food: Food }
-  | { kind: 'api'; product: OpenFoodFactsProduct };
+  | { kind: 'catalog'; item: CatalogFood };
+
+const EMPTY_CATALOG: LocalCatalogResults = { menus: [], usda: [] };
 
 export interface AddFoodSheetProps {
   open: boolean;
@@ -132,8 +140,26 @@ function sourceKind(provenance: NutritionProvenance): SourceKind {
   if (provenance.kind === 'open-food-facts') {
     return provenance.dataQuality === 'complete' ? 'database' : 'estimated';
   }
+  if (provenance.kind === 'usda' || provenance.kind === 'restaurant-guide') {
+    return provenance.dataQuality === 'complete' ? 'database' : 'estimated';
+  }
   if (provenance.kind === 'saved-food' || provenance.kind === 'saved-meal') return 'history';
   return 'custom';
+}
+
+function catalogFromOpenFoodFacts(product: OpenFoodFactsProduct): CatalogFood {
+  return {
+    id: `off:${product.barcode}`,
+    name: product.name,
+    brand: product.brand,
+    serving: product.serving,
+    nutritionPerServing: product.nutritionPerServing,
+    provenance: product.provenance,
+    categories: product.categories,
+    barcode: product.barcode,
+    imageUrl: product.imageUrl,
+    detail: product.nutriScore ? `Nutri-Score ${product.nutriScore}` : undefined,
+  };
 }
 
 function qualityLabel(quality: NutritionDataQuality) {
@@ -272,8 +298,9 @@ export function AddFoodSheet({
   const [error, setError] = useState<string>();
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selection, setSelection] = useState<Selection>();
-  const [servings, setServings] = useState('1');
+  const [servings, setServings] = useState(1);
   const [note, setNote] = useState('');
+  const [catalogReady, setCatalogReady] = useState(false);
   const [quickName, setQuickName] = useState('Quick add');
   const [quickFields, setQuickFields] = useState({ ...EMPTY_NUMBERS });
   const [customName, setCustomName] = useState('');
@@ -301,6 +328,11 @@ export function AddFoodSheet({
     });
   }, [dateKey, mealSlot, query, state]);
 
+  const catalogHits = useMemo(() => {
+    if (!catalogReady || query.trim().length < 2) return EMPTY_CATALOG;
+    return searchLocalCatalog(query, { limit: 12 });
+  }, [catalogReady, query]);
+
   const savedMeals = useMemo(() => state.meals
     .filter((meal) => !meal.deleted)
     .sort((left, right) => Number(right.pinned) - Number(left.pinned) || left.name.localeCompare(right.name)), [state.meals]);
@@ -311,8 +343,9 @@ export function AddFoodSheet({
       setLane('usuals');
       setSelection(undefined);
       setError(undefined);
-      setServings('1');
+      setServings(1);
       setNote('');
+      void loadUsdaCatalog().then(() => setCatalogReady(true));
       return;
     }
     requestRef.current?.abort();
@@ -334,14 +367,14 @@ export function AddFoodSheet({
 
   function beginFood(food: Food) {
     setSelection({ kind: 'food', food });
-    setServings('1');
+    setServings(1);
     setNote('');
     setError(undefined);
   }
 
-  function beginProduct(product: OpenFoodFactsProduct) {
-    setSelection({ kind: 'api', product });
-    setServings('1');
+  function beginCatalog(item: CatalogFood) {
+    setSelection({ kind: 'catalog', item });
+    setServings(1);
     setNote('');
     setError(undefined);
   }
@@ -378,7 +411,7 @@ export function AddFoodSheet({
       setApiQuery(result.query);
       setApiProducts(result.products);
       if (result.products.length === 0) {
-        setError(`No Open Food Facts products matched “${result.query}”. Try a brand name or scan the package.`);
+        setError(`No packaged products matched “${result.query}”. USDA and menu foods above still work, or create it manually.`);
       }
     } catch (nextError) {
       if (!controller.signal.aborted) setError(friendlyApiError(nextError));
@@ -414,7 +447,7 @@ export function AddFoodSheet({
         setLane('custom');
         return;
       }
-      beginProduct(product);
+      beginCatalog(catalogFromOpenFoodFacts(product));
     } catch (nextError) {
       if (!controller.signal.aborted) setError(friendlyApiError(nextError));
     } finally {
@@ -427,9 +460,9 @@ export function AddFoodSheet({
 
   function confirmFood() {
     if (!selection) return;
-    const count = positive(servings, 0);
-    if (count <= 0) {
-      setError('Enter a serving amount greater than zero.');
+    const count = servings;
+    if (!Number.isFinite(count) || count <= 0) {
+      setError('Choose an amount greater than zero.');
       return;
     }
 
@@ -437,22 +470,29 @@ export function AddFoodSheet({
     if (selection.kind === 'food') {
       food = selection.food;
     } else {
-      const product = selection.product;
+      const item = selection.item;
       food = state.foods.find((candidate) =>
-        !candidate.deleted && candidate.barcode === product.barcode,
+        !candidate.deleted && (
+          Boolean(item.barcode && candidate.barcode === item.barcode)
+          || Boolean(
+            item.provenance.externalId
+            && candidate.provenance.kind === item.provenance.kind
+            && candidate.provenance.externalId === item.provenance.externalId
+          )
+        ),
       );
       food ??= store.addFood({
-        name: product.name,
-        brand: product.brand,
-        aliases: product.categories.slice(0, 6),
-        imageUrl: product.imageUrl,
-        barcode: product.barcode,
+        name: item.name,
+        brand: item.brand,
+        aliases: [...(item.aliases ?? []), ...item.categories.slice(0, 6)],
+        imageUrl: item.imageUrl,
+        barcode: item.barcode,
         serving: {
-          ...product.serving,
-          quantity: Math.max(0.000001, product.serving.quantity),
+          ...item.serving,
+          quantity: Math.max(0.000001, item.serving.quantity),
         },
-        nutritionPerServing: product.nutritionPerServing,
-        provenance: product.provenance,
+        nutritionPerServing: item.nutritionPerServing,
+        provenance: item.provenance,
         pinned: false,
       });
     }
@@ -561,16 +601,16 @@ export function AddFoodSheet({
     onToast(`${food.name} saved to your Fare library.`);
   }
 
-  const selectedName = selection?.kind === 'food' ? selection.food.name : selection?.product.name;
-  const selectedBrand = selection?.kind === 'food' ? selection.food.brand : selection?.product.brand;
-  const selectedServing = selection?.kind === 'food' ? selection.food.serving : selection?.product.serving;
+  const selectedName = selection?.kind === 'food' ? selection.food.name : selection?.item.name;
+  const selectedBrand = selection?.kind === 'food' ? selection.food.brand : selection?.item.brand;
+  const selectedServing = selection?.kind === 'food' ? selection.food.serving : selection?.item.serving;
   const selectedNutrition = selection?.kind === 'food'
     ? selection.food.nutritionPerServing
-    : selection?.product.nutritionPerServing;
+    : selection?.item.nutritionPerServing;
   const selectedProvenance = selection?.kind === 'food'
     ? selection.food.provenance
-    : selection?.product.provenance;
-  const servingCount = positive(servings, 1);
+    : selection?.item.provenance;
+  const servingCount = servings;
 
   function renderSuggestion(suggestion: UsualSuggestion) {
     const nutrition = suggestion.food
@@ -663,41 +703,12 @@ export function AddFoodSheet({
                   {[selectedBrand, selectedServing.label].filter(Boolean).join(' · ')}
                 </p>
               </div>
-              <NutritionLine nutrition={scaleNutrition(selectedNutrition, servingCount)} />
-              <div className="field">
-                <span className="field__label">Servings</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '44px minmax(90px, 1fr) 44px', gap: 8 }}>
-                  <button
-                    type="button"
-                    className="icon-button icon-button--soft"
-                    aria-label="Decrease servings"
-                    onClick={() => setServings(String(Math.max(0.25, servingCount - 0.25)))}
-                  ><Minus /></button>
-                  <input
-                    className="input"
-                    type="number"
-                    inputMode="decimal"
-                    min="0.01"
-                    step="0.25"
-                    value={servings}
-                    onChange={(event) => setServings(event.target.value)}
-                    aria-label="Number of servings"
-                  />
-                  <button
-                    type="button"
-                    className="icon-button icon-button--soft"
-                    aria-label="Increase servings"
-                    onClick={() => setServings(String(servingCount + 0.25))}
-                  ><Plus /></button>
-                </div>
-                <div className="suggestion-strip" aria-label="Common serving amounts">
-                  {[0.5, 1, 1.5, 2].map((amount) => (
-                    <button type="button" className="suggestion-chip" key={amount} onClick={() => setServings(String(amount))}>
-                      {amount}×
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <ServingAmount
+                value={servings}
+                onChange={setServings}
+                servingLabel={selectedServing.label}
+                nutrition={selectedNutrition}
+              />
               <label className="field">
                 <span className="field__label">Note <span className="field__optional">optional</span></span>
                 <input className="input" value={note} onChange={(event) => setNote(event.target.value)} placeholder="e.g. after workout" />
@@ -705,9 +716,14 @@ export function AddFoodSheet({
             </Panel>
 
             <ProvenanceNote provenance={selectedProvenance} />
-            {selection.kind === 'api' ? (
+            {selection.kind === 'catalog' && selection.item.provenance.kind === 'open-food-facts' ? (
               <p style={muted}>
                 Product data is provided by Open Food Facts under its database terms. Fare saves this exact nutrition version before logging it.
+              </p>
+            ) : null}
+            {selection.kind === 'catalog' && selection.item.provenance.kind === 'usda' ? (
+              <p style={muted}>
+                USDA FoodData Central values are for a typical portion. Fare stores this snapshot when you log it, so later catalog updates never rewrite this day.
               </p>
             ) : null}
             {error ? <div className="notice notice--danger" role="alert"><AlertTriangle size={17} /> {error}</div> : null}
@@ -792,10 +808,10 @@ export function AddFoodSheet({
                     </button>
                     <button type="submit" className="button button--outline button--small" disabled={loading === 'search' || query.trim().length < 2}>
                       {loading === 'search' ? <LoaderCircle className="spin" size={17} /> : <Database size={17} />}
-                      Search Open Food Facts
+                      Search packaged foods
                     </button>
                   </div>
-                  <p style={muted}>Typing searches this device only. Open Food Facts is contacted only when you press its search button.</p>
+                  <p style={muted}>Typing searches this device, USDA foods, and restaurant menus. Open Food Facts is contacted only when you press packaged search.</p>
                 </form>
 
                 {query.trim() ? (
@@ -805,17 +821,60 @@ export function AddFoodSheet({
                       <SourceBadge source="history" label="Private + instant" />
                     </div>
                     {localResults.length > 0 ? localResults.map(renderSuggestion) : (
-                      <p style={{ ...muted, padding: '14px 0' }}>No local matches yet. Use the explicit database search or create this food.</p>
+                      <p style={{ ...muted, padding: '14px 0' }}>No saved matches yet. USDA and menu foods appear below as you type, or search packaged products.</p>
                     )}
                   </section>
                 ) : (
-                  <EmptyState compact icon={<PackageSearch />} title="Start with your own library" description="Names, brands, aliases, saved meals, and prior choices are searched locally as you type." />
+                  <EmptyState compact icon={<PackageSearch />} title="Start with your own library" description="Names, brands, aliases, saved meals, USDA foods, and restaurant menus are searched as you type." />
                 )}
+
+                {catalogHits.menus.length > 0 ? (
+                  <section>
+                    <div style={{ ...row, marginBottom: 5 }}>
+                      <strong style={{ color: 'var(--text-strong)' }}>Pantry and menus</strong>
+                      <SourceBadge source="database" label={`${catalogHits.menus.length} matches`} />
+                    </div>
+                    {catalogHits.menus.map((item) => (
+                      <FoodResult
+                        key={item.id}
+                        name={item.name}
+                        brand={item.brand}
+                        servingLabel={item.serving.label}
+                        nutrition={item.nutritionPerServing}
+                        provenance={item.provenance}
+                        detail={item.detail}
+                        onSelect={() => beginCatalog(item)}
+                      />
+                    ))}
+                  </section>
+                ) : null}
+
+                {catalogHits.usda.length > 0 ? (
+                  <section>
+                    <div style={{ ...row, marginBottom: 5 }}>
+                      <strong style={{ color: 'var(--text-strong)' }}>USDA foods</strong>
+                      <SourceBadge source="database" label={`${catalogHits.usda.length} matches`} />
+                    </div>
+                    {catalogHits.usda.map((item) => (
+                      <FoodResult
+                        key={item.id}
+                        name={item.name}
+                        brand={item.brand}
+                        servingLabel={item.serving.label}
+                        nutrition={item.nutritionPerServing}
+                        provenance={item.provenance}
+                        detail={item.detail}
+                        onSelect={() => beginCatalog(item)}
+                      />
+                    ))}
+                    <p style={{ ...muted, marginTop: 12 }}>USDA FoodData Central survey foods. Values are for the listed typical portion.</p>
+                  </section>
+                ) : null}
 
                 {apiQuery ? (
                   <section>
                     <div style={{ ...row, marginBottom: 5 }}>
-                      <strong style={{ color: 'var(--text-strong)' }}>Open Food Facts · “{apiQuery}”</strong>
+                      <strong style={{ color: 'var(--text-strong)' }}>Packaged foods · “{apiQuery}”</strong>
                       <SourceBadge source="database" label={`${apiProducts.length} results`} />
                     </div>
                     {apiProducts.map((product) => (
@@ -827,7 +886,7 @@ export function AddFoodSheet({
                         nutrition={product.nutritionPerServing}
                         provenance={product.provenance}
                         detail={product.nutriScore ? `Nutri-Score ${product.nutriScore}` : undefined}
-                        onSelect={() => beginProduct(product)}
+                        onSelect={() => beginCatalog(catalogFromOpenFoodFacts(product))}
                       />
                     ))}
                     <p style={{ ...muted, marginTop: 12 }}>Community-contributed data from Open Food Facts. Compare nutrition with the package label.</p>

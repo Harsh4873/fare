@@ -78,6 +78,22 @@ describe('Fare state parser', () => {
     expect(() => parseFareState(invalidProfile)).toThrow(/birth date must use YYYY-MM-DD/i);
   });
 
+  it('accepts USDA catalog provenance on stored diary snapshots', () => {
+    const raw = JSON.parse(JSON.stringify(validState())) as {
+      entries: Array<{ snapshot: { provenance: Record<string, unknown> } }>;
+    };
+    raw.entries[0].snapshot.provenance = {
+      kind: 'usda',
+      providerName: 'USDA FoodData Central',
+      externalId: '2709224',
+      sourceUrl: 'https://fdc.nal.usda.gov/food-details/2709224/nutrients',
+      dataQuality: 'complete',
+      warnings: ['USDA survey food.'],
+    };
+    const parsed = parseFareState(raw);
+    expect(parsed.entries[0].snapshot.provenance.kind).toBe('usda');
+  });
+
   it('accepts only HTTPS links that are safe to expose as source actions', () => {
     const unsafe = structuredClone(validState());
     (unsafe.entries[0].snapshot.provenance as unknown as { sourceUrl: string }).sourceUrl = 'javascript:alert(1)';

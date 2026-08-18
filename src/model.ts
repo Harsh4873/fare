@@ -45,6 +45,8 @@ export type NutritionDataQuality =
 export type NutritionSourceKind =
   | 'manual'
   | 'open-food-facts'
+  | 'usda'
+  | 'restaurant-guide'
   | 'saved-food'
   | 'saved-meal';
 
