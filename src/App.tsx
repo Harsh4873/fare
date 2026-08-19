@@ -178,10 +178,14 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
   const summary = summarizeDay(state.entries, dateKey);
   const isToday = dateKey === toDateKey(new Date());
   const remaining = Math.max(0, state.targets.calories - summary.totals.calories);
+  const yesterdayKey = addDays(dateKey, -1);
 
-  function copyYesterday() {
-    const copied = store.copyDay(addDays(dateKey, -1), dateKey);
-    onToast(copied.length ? `Copied ${copied.length} item${copied.length === 1 ? '' : 's'} from yesterday.` : 'Yesterday has no logged food to copy.');
+  function copyYesterdaySlot(slot: MealSlot, label: string) {
+    const copied = store.copyDay(yesterdayKey, dateKey, slot);
+    const meal = label.toLowerCase();
+    onToast(copied.length
+      ? `Copied yesterday’s ${meal} (${copied.length} item${copied.length === 1 ? '' : 's'}).`
+      : `No ${meal} logged yesterday.`);
   }
 
   return (
@@ -207,7 +211,6 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
             <span className="eyebrow">Daily intake</span>
             <h2>{summary.entryCount ? `${summary.entryCount} item${summary.entryCount === 1 ? '' : 's'} logged` : 'Your plate is open'}</h2>
             <p>{summary.entryCount ? 'Every item is saved as its own nutrition snapshot.' : 'Start with an Usual, scan a barcode, or create something custom.'}</p>
-            <button type="button" className="button button--secondary button--small" onClick={copyYesterday}><Copy /> Copy yesterday</button>
           </div>
         </div>
         {state.settings.showMacroTargets && (
@@ -225,6 +228,9 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
           const entries = state.entries
             .filter((entry) => !entry.deleted && entry.dateKey === dateKey && entry.mealSlot === meal.id)
             .sort((left, right) => left.consumedAt.localeCompare(right.consumedAt));
+          const yesterdayEntries = state.entries.filter((entry) =>
+            !entry.deleted && entry.dateKey === yesterdayKey && entry.mealSlot === meal.id,
+          );
           const total = addNutrition(...entries.map((entry) => entry.snapshot.nutrition));
           return (
             <section className="meal-section" key={meal.id}>
@@ -262,7 +268,18 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
                 </div>
               )}
               <footer className="meal-section__footer">
-                <button type="button" className="meal-add" onClick={() => onAdd(meal.id)}><Plus /> Add to {meal.label.toLowerCase()}</button>
+                <div className={`meal-section__actions${yesterdayEntries.length ? ' meal-section__actions--split' : ''}`}>
+                  {yesterdayEntries.length > 0 ? (
+                    <button
+                      type="button"
+                      className="meal-copy"
+                      onClick={() => copyYesterdaySlot(meal.id, meal.label)}
+                    >
+                      <Copy /> Copy yesterday
+                    </button>
+                  ) : null}
+                  <button type="button" className="meal-add" onClick={() => onAdd(meal.id)}><Plus /> Add to {meal.label.toLowerCase()}</button>
+                </div>
               </footer>
             </section>
           );

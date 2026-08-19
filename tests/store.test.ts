@@ -5,7 +5,7 @@ import {
   type FoodEntry,
   type Nutrition,
 } from '../src/model';
-import { parseFareState } from '../src/store';
+import { parseFareState, entriesForCopy } from '../src/store';
 
 const nutrition: Nutrition = {
   calories: 160,
@@ -108,5 +108,28 @@ describe('Fare state parser', () => {
     const negativeCalories = structuredClone(validState());
     (negativeCalories.entries[0].snapshot.nutrition as { calories: number }).calories = -1;
     expect(() => parseFareState(negativeCalories)).toThrow(/calories must be at least 0/i);
+  });
+
+  it('can copy one meal slot from yesterday without taking the rest of the day', () => {
+    const lunch = validState().entries[0];
+    const breakfast: FoodEntry = {
+      ...lunch,
+      id: 'entry-breakfast',
+      mealSlot: 'breakfast',
+    };
+    const snack: FoodEntry = {
+      ...lunch,
+      id: 'entry-snack',
+      mealSlot: 'snack',
+    };
+    const entries = [breakfast, lunch, snack];
+    expect(entriesForCopy(entries, '2026-07-12', 'breakfast').map((entry) => entry.id)).toEqual(['entry-breakfast']);
+    expect(entriesForCopy(entries, '2026-07-12', 'snack').map((entry) => entry.id)).toEqual(['entry-snack']);
+    expect(entriesForCopy(entries, '2026-07-12').map((entry) => entry.id)).toEqual([
+      'entry-breakfast',
+      'entry-1',
+      'entry-snack',
+    ]);
+    expect(entriesForCopy(entries, '2026-07-11', 'breakfast')).toEqual([]);
   });
 });

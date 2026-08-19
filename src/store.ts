@@ -71,7 +71,7 @@ export interface FareStore {
   logFood: (food: Food, options: LogFoodOptions) => FoodEntry | undefined;
   logMeal: (meal: SavedMeal, options: LogMealOptions) => FoodEntry[];
   copyEntry: (id: string, dateKey: string, mealSlot?: MealSlot) => FoodEntry | undefined;
-  copyDay: (fromDateKey: string, toDateKey: string) => FoodEntry[];
+  copyDay: (fromDateKey: string, toDateKey: string, mealSlot?: MealSlot) => FoodEntry[];
   updateProfile: (patch: Partial<Omit<FareProfile, 'updatedAt'>>) => void;
   updateTargets: (patch: Partial<Omit<NutritionTargets, 'updatedAt'>>) => void;
   updateSettings: (patch: Partial<Omit<FareSettings, 'updatedAt'>>) => void;
@@ -418,6 +418,18 @@ function makeTombstone<T extends { id: string; createdAt: string; updatedAt: str
   return { ...entity, updatedAt: now, deleted: true, deletedAt: now };
 }
 
+export function entriesForCopy(
+  entries: readonly FoodEntry[],
+  fromDateKey: string,
+  mealSlot?: MealSlot,
+): FoodEntry[] {
+  return entries.filter((entry) =>
+    !entry.deleted
+    && entry.dateKey === fromDateKey
+    && (mealSlot === undefined || entry.mealSlot === mealSlot),
+  );
+}
+
 export function useFareStore(): FareStore {
   const [state, setState] = useState<FareState | null>(null);
   const [storageMode, setStorageMode] = useState<StorageMode>('localStorage');
@@ -601,10 +613,10 @@ export function useFareStore(): FareStore {
     return addEntry({ ...draft, dateKey, mealSlot: mealSlot ?? source.mealSlot, consumedAt: new Date().toISOString() });
   }, [addEntry]);
 
-  const copyDay = useCallback((fromDateKey: string, toDateKey: string) => {
+  const copyDay = useCallback((fromDateKey: string, toDateKey: string, mealSlot?: MealSlot) => {
     const current = stateRef.current;
     if (!current) return [];
-    const source = current.entries.filter((entry) => !entry.deleted && entry.dateKey === fromDateKey);
+    const source = entriesForCopy(current.entries, fromDateKey, mealSlot);
     const now = timestampAfterState(current);
     const consumedAt = new Date().toISOString();
     const entries = source.map((entry): FoodEntry => ({ ...entry, id: createId('entry'), dateKey: toDateKey, consumedAt, createdAt: now, updatedAt: now }));

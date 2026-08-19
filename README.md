@@ -6,7 +6,7 @@ Fare is a private, local-first calorie and macro tracker, published at `harsh.be
 
 - **Usuals first:** personal suggestions rank query match, meal/time context, frequency, recency, weekday, and pins before any public-database result.
 - **Immutable history:** every diary entry stores its own nutrition and serving snapshot. Editing a saved food or an upstream catalog record never rewrites an earlier day.
-- **Flexible logging:** repeat a food, copy a meal or day, quick-add calories/macros, create custom foods, save meal templates, scan or type a barcode, or explicitly search Open Food Facts.
+- **Flexible logging:** repeat a food, copy yesterday’s breakfast or snacks into today, quick-add calories/macros, create custom foods, save meal templates, scan or type a barcode, or explicitly search Open Food Facts.
 - **Useful review:** day totals, remaining targets, macro bars, meal contribution, weekly averages, logged-day completeness, and frequently reused foods.
 - **Private sync:** the local IndexedDB/localStorage mirror works signed out. Optional Google sign-in gives every verified account its own UID-scoped Firebase workspace and keeps Fare isolated from the other harsh.bet apps.
 - **Portable data:** JSON backup/import plus CSV diary export.
