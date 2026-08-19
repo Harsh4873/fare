@@ -31,4 +31,10 @@ describe('USDA catalog search', () => {
     expect(menus.some((item) => item.name === 'Banana')).toBe(true);
     expect(usda.some((item) => headingName(item.name) === 'banana')).toBe(false);
   });
+
+  it('finds Chipotle menu items for the restaurants lane', () => {
+    const { menus } = searchLocalCatalog('barbacoa', { usda: records });
+    const item = menus.find((entry) => entry.brand === 'Chipotle' && /barbacoa/i.test(entry.name));
+    expect(item?.provenance.kind).toBe('restaurant-guide');
+  });
 });

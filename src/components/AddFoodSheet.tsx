@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   ArrowLeft,
+  ChefHat,
   Clock3,
   Database,
   LoaderCircle,
@@ -9,7 +10,6 @@ import {
   ScanBarcode,
   Search,
   Sparkles,
-  UtensilsCrossed,
   Zap,
 } from 'lucide-react';
 import {
@@ -25,9 +25,16 @@ import { rankUsuals, type UsualSuggestion } from '../memory';
 import type { CatalogFood } from '../food-catalog/types';
 import {
   loadUsdaCatalog,
+  menuFoodToCatalog,
   searchLocalCatalog,
   type LocalCatalogResults,
 } from '../food-catalog/search';
+import {
+  GENERIC_FOODS,
+  RESTAURANTS,
+  restaurantById,
+} from '../breakdown/data';
+import type { BreakdownFood } from '../breakdown/types';
 import {
   createNutritionSnapshot,
   type FareState,
@@ -56,7 +63,7 @@ import {
 import { BarcodeScanner } from './BarcodeScanner';
 import { ServingAmount } from './ServingAmount';
 
-type Lane = 'usuals' | 'search' | 'quick' | 'custom' | 'meals';
+type Lane = 'usuals' | 'search' | 'restaurants' | 'quick';
 type LoadingKind = 'search' | 'barcode' | null;
 type Selection =
   | { kind: 'food'; food: Food }
@@ -77,9 +84,8 @@ export interface AddFoodSheetProps {
 const LANES = [
   { value: 'usuals', label: 'Usuals', icon: <Sparkles /> },
   { value: 'search', label: 'Search', icon: <Search /> },
+  { value: 'restaurants', label: 'Restaurants', icon: <ChefHat /> },
   { value: 'quick', label: 'Quick add', icon: <Zap /> },
-  { value: 'custom', label: 'Create', icon: <Plus /> },
-  { value: 'meals', label: 'Meals', icon: <UtensilsCrossed /> },
 ] as const;
 
 const MEAL_SLOTS: ReadonlyArray<{ value: MealSlot; label: string }> = [
@@ -115,11 +121,6 @@ const muted: CSSProperties = { color: 'var(--text-muted)', fontSize: 12, margin:
 function nonNegative(raw: string): number {
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : 0;
-}
-
-function positive(raw: string, fallback = 1): number {
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 function nutritionFromFields(fields: typeof EMPTY_NUMBERS): Nutrition {
@@ -255,6 +256,14 @@ function FoodResult({
   );
 }
 
+function servesOfficialData(items: readonly BreakdownFood[]): boolean {
+  return items[0]?.sourceType === 'restaurant-official';
+}
+
+function formatMenuKcal(food: BreakdownFood): string {
+  return Math.round(food.nutrition.calories).toLocaleString();
+}
+
 function mealNutrition(meal: SavedMeal): Nutrition {
   return addNutrition(...meal.items.map((item) =>
     scaleNutrition(item.snapshot.nutritionPerServing, item.servings),
@@ -303,12 +312,8 @@ export function AddFoodSheet({
   const [catalogReady, setCatalogReady] = useState(false);
   const [quickName, setQuickName] = useState('Quick add');
   const [quickFields, setQuickFields] = useState({ ...EMPTY_NUMBERS });
-  const [customName, setCustomName] = useState('');
-  const [customBrand, setCustomBrand] = useState('');
-  const [servingQuantity, setServingQuantity] = useState('1');
-  const [servingUnit, setServingUnit] = useState('serving');
-  const [servingLabel, setServingLabel] = useState('1 serving');
-  const [customFields, setCustomFields] = useState({ ...EMPTY_NUMBERS });
+  const [menuId, setMenuId] = useState<string>();
+  const [menuQuery, setMenuQuery] = useState('');
 
   const localUsuals = useMemo(() => rankUsuals(state, {
     dateKey,
@@ -333,9 +338,35 @@ export function AddFoodSheet({
     return searchLocalCatalog(query, { limit: 12 });
   }, [catalogReady, query]);
 
-  const savedMeals = useMemo(() => state.meals
-    .filter((meal) => !meal.deleted)
-    .sort((left, right) => Number(right.pinned) - Number(left.pinned) || left.name.localeCompare(right.name)), [state.meals]);
+  const selectedRestaurant = restaurantById(menuId);
+  const restaurantFoods = useMemo(() => {
+    const all = menuId === 'pantry' ? GENERIC_FOODS : selectedRestaurant?.items ?? [];
+    const needle = menuQuery.trim().toLowerCase();
+    if (!needle) return all;
+    return all.filter((food) =>
+      food.name.toLowerCase().includes(needle)
+      || food.category.toLowerCase().includes(needle)
+      || (food.aliases ?? []).some((alias) => alias.toLowerCase().includes(needle)),
+    );
+  }, [menuId, menuQuery, selectedRestaurant]);
+  const restaurantCategories = useMemo(() => {
+    const groups = new Map<string, BreakdownFood[]>();
+    for (const food of restaurantFoods) {
+      const list = groups.get(food.category) ?? [];
+      list.push(food);
+      groups.set(food.category, list);
+    }
+    const preferred = menuId === 'pantry' ? [] : selectedRestaurant?.categories ?? [];
+    const ordered: Array<[string, BreakdownFood[]]> = [];
+    for (const category of preferred) {
+      const foods = groups.get(category);
+      if (foods) ordered.push([category, foods]);
+    }
+    for (const [category, foods] of groups) {
+      if (!preferred.includes(category)) ordered.push([category, foods]);
+    }
+    return ordered;
+  }, [menuId, restaurantFoods, selectedRestaurant]);
 
   useEffect(() => {
     if (open) {
@@ -345,6 +376,8 @@ export function AddFoodSheet({
       setError(undefined);
       setServings(1);
       setNote('');
+      setMenuId(undefined);
+      setMenuQuery('');
       void loadUsdaCatalog().then(() => setCatalogReady(true));
       return;
     }
@@ -411,7 +444,7 @@ export function AddFoodSheet({
       setApiQuery(result.query);
       setApiProducts(result.products);
       if (result.products.length === 0) {
-        setError(`No packaged products matched “${result.query}”. USDA and menu foods above still work, or create it manually.`);
+        setError(`No packaged products matched “${result.query}”. USDA and restaurant foods above still work, or use Quick add.`);
       }
     } catch (nextError) {
       if (!controller.signal.aborted) setError(friendlyApiError(nextError));
@@ -443,8 +476,8 @@ export function AddFoodSheet({
       const product = await apiRef.current!.lookupBarcode(barcode, { signal: controller.signal });
       if (controller.signal.aborted) return;
       if (!product) {
-        setError('That barcode is not in Open Food Facts yet. Create the food manually instead.');
-        setLane('custom');
+        setError('That barcode is not in Open Food Facts yet. Quick-add it instead.');
+        setLane('quick');
         return;
       }
       beginCatalog(catalogFromOpenFoodFacts(product));
@@ -550,55 +583,6 @@ export function AddFoodSheet({
     }
     onToast(`${name} added to ${mealSlot}.`);
     closeSheet();
-  }
-
-  function submitCustomFood(event: FormEvent) {
-    event.preventDefault();
-    const name = customName.trim();
-    if (!name) {
-      setError('Give this food a name.');
-      return;
-    }
-    const quantity = positive(servingQuantity, 0);
-    if (quantity <= 0 || !servingUnit.trim() || !servingLabel.trim()) {
-      setError('Complete the serving amount, unit, and label.');
-      return;
-    }
-    const nutrition = nutritionFromFields(customFields);
-    if (nutrition.calories <= 0) {
-      setError('Enter calories per serving.');
-      return;
-    }
-    const macroCount = [nutrition.proteinG, nutrition.carbsG, nutrition.fatG]
-      .filter((value) => value > 0).length;
-    const warnings = macroCount < 3 ? ['One or more core macros were left at zero.'] : [];
-    const food = store.addFood({
-      name,
-      brand: customBrand.trim() || undefined,
-      aliases: [],
-      serving: {
-        quantity,
-        unit: servingUnit.trim(),
-        label: servingLabel.trim(),
-      },
-      nutritionPerServing: nutrition,
-      provenance: {
-        kind: 'manual',
-        providerName: 'Fare custom food',
-        dataQuality: macroCount === 3 ? 'complete' : 'partial',
-        warnings,
-      },
-      pinned: false,
-    });
-    if (!food) {
-      setError('Fare could not save this food. Try again.');
-      return;
-    }
-    setCustomName('');
-    setCustomBrand('');
-    setCustomFields({ ...EMPTY_NUMBERS });
-    beginFood(food);
-    onToast(`${food.name} saved to your Fare library.`);
   }
 
   const selectedName = selection?.kind === 'food' ? selection.food.name : selection?.item.name;
@@ -726,6 +710,11 @@ export function AddFoodSheet({
                 USDA FoodData Central values are for a typical portion. Fare stores this snapshot when you log it, so later catalog updates never rewrite this day.
               </p>
             ) : null}
+            {selection.kind === 'catalog' && selection.item.provenance.kind === 'restaurant-guide' ? (
+              <p style={muted}>
+                Restaurant values come from a published nutrition guide. Fare stores this snapshot when you log it, so later menu updates never rewrite this day.
+              </p>
+            ) : null}
             {error ? <div className="notice notice--danger" role="alert"><AlertTriangle size={17} /> {error}</div> : null}
             <button type="button" className="button button--primary button--large button--full" onClick={confirmFood}>
               Add {formatAmount(scaleNutrition(selectedNutrition, servingCount).calories)} kcal to {mealSlot}
@@ -774,7 +763,7 @@ export function AddFoodSheet({
                     compact
                     icon={<Sparkles />}
                     title="Your Usuals will learn quickly"
-                    description="Log a few foods and Fare will surface what you normally choose around this time."
+                    description="Log a few foods and Fare will rank what you normally choose around this time. There is nothing to pin or edit."
                     action={<button type="button" className="button button--secondary button--small" onClick={() => setLane('search')}>Find a food</button>}
                   />
                 )}
@@ -794,7 +783,7 @@ export function AddFoodSheet({
                           setQuery(event.target.value);
                           setError(undefined);
                         }}
-                        placeholder="Search foods, meals, or products"
+                        placeholder="Search foods or products"
                         autoComplete="off"
                         inputMode="search"
                         enterKeyHint="search"
@@ -825,7 +814,7 @@ export function AddFoodSheet({
                     )}
                   </section>
                 ) : (
-                  <EmptyState compact icon={<PackageSearch />} title="Start with your own library" description="Names, brands, aliases, saved meals, USDA foods, and restaurant menus are searched as you type." />
+                  <EmptyState compact icon={<PackageSearch />} title="Start with your own library" description="Logged foods, USDA survey items, and restaurant menus are searched as you type." />
                 )}
 
                 {catalogHits.menus.length > 0 ? (
@@ -895,10 +884,92 @@ export function AddFoodSheet({
               </div>
             ) : null}
 
+            {lane === 'restaurants' ? (
+              <div className="add-food-sheet__results">
+                {!menuId ? (
+                  <div className="picker-menu">
+                    <p style={muted}>Chain menus use published nutrition guides. The Indian menu uses typical-dish estimates. Logging stores a snapshot, so later menu updates never rewrite this day.</p>
+                    <div className="restaurant-tiles">
+                      {RESTAURANTS.map((candidate) => (
+                        <button type="button" key={candidate.id} className="restaurant-tile" onClick={() => { setMenuId(candidate.id); setMenuQuery(''); }}>
+                          <span className="restaurant-tile__icon"><ChefHat /></span>
+                          <strong>{candidate.name}</strong>
+                          <span>{candidate.items.length} items · {servesOfficialData(candidate.items) ? 'official data' : 'typical-dish estimates'}</span>
+                        </button>
+                      ))}
+                      <button type="button" className="restaurant-tile restaurant-tile--alt" onClick={() => { setMenuId('pantry'); setMenuQuery(''); }}>
+                        <span className="restaurant-tile__icon"><PackageSearch /></span>
+                        <strong>Pantry staples</strong>
+                        <span>{GENERIC_FOODS.length} USDA-derived items</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="picker-menu">
+                    <button type="button" className="text-button" style={{ justifySelf: 'start' }} onClick={() => { setMenuId(undefined); setMenuQuery(''); }}>
+                      <ArrowLeft size={16} /> All restaurants
+                    </button>
+                    <div style={{ ...row, marginBottom: 2 }}>
+                      <div>
+                        <strong style={{ color: 'var(--text-strong)' }}>{menuId === 'pantry' ? 'Pantry staples' : selectedRestaurant?.name}</strong>
+                        <p style={muted}>
+                          {menuId === 'pantry'
+                            ? 'Typical portions from USDA-derived pantry data.'
+                            : servesOfficialData(selectedRestaurant?.items ?? [])
+                              ? `Published nutrition guide · checked ${selectedRestaurant?.lastVerified}`
+                              : `Typical-dish estimates · checked ${selectedRestaurant?.lastVerified}`}
+                        </p>
+                      </div>
+                      <SourceBadge
+                        source={menuId === 'pantry' ? 'database' : servesOfficialData(selectedRestaurant?.items ?? []) ? 'verified' : 'estimated'}
+                        label={`${restaurantFoods.length} items`}
+                      />
+                    </div>
+                    <label className="field">
+                      <span className="field__label">Filter this menu</span>
+                      <input
+                        className="input"
+                        value={menuQuery}
+                        onChange={(event) => setMenuQuery(event.target.value)}
+                        placeholder="Chicken, dressing, rice…"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                      />
+                    </label>
+                    {restaurantCategories.length > 0 ? restaurantCategories.map(([category, foods]) => (
+                      <section className="picker-group" key={category}>
+                        <h4 className="picker-group__title">{category}</h4>
+                        <div className="picker-group__items">
+                          {foods.map((food) => (
+                            <button
+                              type="button"
+                              className="picker-item"
+                              key={food.id}
+                              onClick={() => beginCatalog(menuFoodToCatalog(food))}
+                            >
+                              <span className="picker-item__copy">
+                                <strong>{food.name}</strong>
+                                <span>{food.servingLabel} · {Math.round(food.nutrition.proteinG)} g protein</span>
+                              </span>
+                              <span className="picker-item__value">{formatMenuKcal(food)} kcal</span>
+                              <span className="picker-item__add" aria-hidden="true"><Plus /></span>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    )) : (
+                      <EmptyState compact icon={<Search />} title="Nothing in this menu matches" description="Clear the filter or pick a different restaurant." />
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
             {lane === 'quick' ? (
               <form style={stack} onSubmit={submitQuickAdd}>
                 <Panel variant="soft" padding="compact">
-                  <p style={muted}>For a known calorie or macro total you do not need to save as a reusable food.</p>
+                  <p style={muted}>For a known calorie or macro total you do not need a reusable food.</p>
                 </Panel>
                 <label className="field">
                   <span className="field__label">Label <span className="field__optional">optional</span></span>
@@ -907,63 +978,6 @@ export function AddFoodSheet({
                 <div className="form-grid">{nutritionFields(quickFields, setQuickFields)}</div>
                 <button type="submit" className="button button--primary button--large button--full">Add to {mealSlot}</button>
               </form>
-            ) : null}
-
-            {lane === 'custom' ? (
-              <form style={stack} onSubmit={submitCustomFood}>
-                <Panel variant="soft" padding="compact">
-                  <p style={muted}>Custom foods remain private, become searchable, and can be reused without retyping nutrition.</p>
-                </Panel>
-                <div className="form-grid">
-                  <label className="field">
-                    <span className="field__label">Food name</span>
-                    <input className="input" required value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="Cafe latte protein shake" />
-                  </label>
-                  <label className="field">
-                    <span className="field__label">Brand <span className="field__optional">optional</span></span>
-                    <input className="input" value={customBrand} onChange={(event) => setCustomBrand(event.target.value)} placeholder="Premier Protein" />
-                  </label>
-                  <label className="field">
-                    <span className="field__label">Serving amount</span>
-                    <input className="input" type="number" inputMode="decimal" min="0.01" step="any" required value={servingQuantity} onChange={(event) => setServingQuantity(event.target.value)} />
-                  </label>
-                  <label className="field">
-                    <span className="field__label">Serving unit</span>
-                    <input className="input" required value={servingUnit} onChange={(event) => setServingUnit(event.target.value)} placeholder="bottle" />
-                  </label>
-                  <label className="field form-grid__full">
-                    <span className="field__label">Serving label</span>
-                    <input className="input" required value={servingLabel} onChange={(event) => setServingLabel(event.target.value)} placeholder="1 bottle (325 mL)" />
-                  </label>
-                </div>
-                <div className="form-grid">{nutritionFields(customFields, setCustomFields)}</div>
-                <button type="submit" className="button button--primary button--large button--full">Save food and choose amount</button>
-              </form>
-            ) : null}
-
-            {lane === 'meals' ? (
-              <div className="add-food-sheet__results">
-                <div style={{ ...row, marginBottom: 5 }}>
-                  <div>
-                    <strong style={{ color: 'var(--text-strong)' }}>Saved meals</strong>
-                    <p style={muted}>Logs each food as its own immutable entry.</p>
-                  </div>
-                  <SourceBadge source="history" label={`${savedMeals.length} saved`} />
-                </div>
-                {savedMeals.length > 0 ? savedMeals.map((meal) => (
-                  <FoodResult
-                    key={meal.id}
-                    name={meal.name}
-                    servingLabel={`${meal.items.length} foods`}
-                    nutrition={mealNutrition(meal)}
-                    provenance={{ kind: 'saved-meal', providerName: 'Saved meal', dataQuality: 'complete', warnings: [] }}
-                    detail={meal.defaultSlot ? `usually ${meal.defaultSlot}` : undefined}
-                    onSelect={() => logMeal(meal)}
-                  />
-                )) : (
-                  <EmptyState compact icon={<UtensilsCrossed />} title="No saved meals yet" description="Combine foods you eat together and they will appear here for one-tap logging." />
-                )}
-              </div>
             ) : null}
           </div>
         )}
