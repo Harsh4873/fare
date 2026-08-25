@@ -6,6 +6,9 @@
     {
       "source": "functions",
       "codebase": "fare",
+      "predeploy": [
+        "npm --prefix functions run build"
+      ],
       "ignore": ["node_modules", ".git", ".env", "firebase-debug.log", "src"]
     }
   ],

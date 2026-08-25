@@ -28,6 +28,7 @@ export interface FatSecretClientOptions {
   readonly baseUrl?: string;
   readonly now?: () => number;
   readonly searchCacheMs?: number;
+  readonly getIdToken?: () => Promise<string | undefined>;
 }
 
 export interface ExplicitSearchOptions {
@@ -39,6 +40,9 @@ interface CacheEntry<T> {
   readonly expiresAt: number;
   readonly value: T;
 }
+
+export const FATSECRET_PRODUCTION_SEARCH_URL =
+  'https://us-central1-pickledgerpro.cloudfunctions.net/fatsecretSearch';
 
 export class FatSecretUnavailableError extends Error {
   constructor(message = 'FatSecret brand search is not configured') {
@@ -64,7 +68,16 @@ export function resolveFatSecretProxyUrl(env: {
   const fromEnv = env.VITE_FATSECRET_PROXY_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, '');
   if (env.DEV) return '/api/fatsecret';
-  return undefined;
+  return FATSECRET_PRODUCTION_SEARCH_URL;
+}
+
+export function isLocalFatSecretProxy(url: string): boolean {
+  try {
+    const parsed = new URL(url, 'http://127.0.0.1');
+    return parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost';
+  } catch {
+    return true;
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -153,6 +166,7 @@ export class FatSecretClient {
   private readonly now: () => number;
   private readonly baseUrl: string | undefined;
   private readonly searchCacheMs: number;
+  private readonly getIdToken?: () => Promise<string | undefined>;
   private readonly searchCache = new Map<string, CacheEntry<FatSecretSearchResult>>();
 
   constructor(options: FatSecretClientOptions = {}) {
@@ -164,6 +178,7 @@ export class FatSecretClient {
     this.now = options.now ?? Date.now;
     this.baseUrl = ('baseUrl' in options ? options.baseUrl : resolveFatSecretProxyUrl())?.replace(/\/$/, '');
     this.searchCacheMs = options.searchCacheMs ?? 10 * 60_000;
+    this.getIdToken = options.getIdToken;
   }
 
   /**
@@ -186,12 +201,21 @@ export class FatSecretClient {
     if (cached && cached.expiresAt > this.now()) return cached.value;
 
     const href = this.baseUrl + "?q=" + encodeURIComponent(query) + "&limit=" + String(limit);
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (!isLocalFatSecretProxy(this.baseUrl)) {
+      const token = await this.getIdToken?.();
+      if (!token) throw new FatSecretUnavailableError();
+      headers.Authorization = `Bearer ${token}`;
+    }
 
     const response = await this.fetch(href, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers,
       signal: options.signal,
     });
+    if (response.status === 401 || response.status === 403 || response.status === 404 || response.status === 503) {
+      throw new FatSecretUnavailableError();
+    }
     if (!response.ok) {
       throw new FatSecretRequestError(`FatSecret proxy failed (${response.status})`, response.status);
     }

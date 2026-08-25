@@ -83,6 +83,14 @@ jobs:
           grep -Fq 'href="https://harsh.bet/fare/"' dist/index.html
           grep -Fq 'self.registration.scope' dist/sw.js
           grep -R -Fq 'sw.js' dist/assets
+          if grep -R -F 'FATSECRET_CONSUMER_KEY' dist; then
+            echo 'FatSecret consumer key name must not ship in the Pages artifact.' >&2
+            exit 1
+          fi
+          if grep -R -F 'FATSECRET_SHARED_SECRET' dist; then
+            echo 'FatSecret shared secret name must not ship in the Pages artifact.' >&2
+            exit 1
+          fi
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
 

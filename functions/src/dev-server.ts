@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handleFatSecretRequest } from './handler.js';
@@ -18,6 +19,7 @@ function loadEnvFile(path: string): void {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
+loadEnvFile(resolve(homedir(), '.config/fare/fatsecret.env'));
 loadEnvFile(resolve(here, '../.env'));
 loadEnvFile(resolve(here, '../../.env'));
 

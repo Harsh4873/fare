@@ -77,9 +77,9 @@ describe('FatSecretClient', () => {
     });
   });
 
-  it('uses the production env URL and otherwise only a local dev path', () => {
+  it('uses the production Cloud Function URL outside local Vite', () => {
     expect(resolveFatSecretProxyUrl({ VITE_FATSECRET_PROXY_URL: ' https://example.invalid/search/ ' })).toBe('https://example.invalid/search');
     expect(resolveFatSecretProxyUrl({ DEV: true })).toBe('/api/fatsecret');
-    expect(resolveFatSecretProxyUrl({ DEV: false })).toBeUndefined();
+    expect(resolveFatSecretProxyUrl({ DEV: false })).toBe('https://us-central1-pickledgerpro.cloudfunctions.net/fatsecretSearch');
   });
 });

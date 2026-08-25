@@ -47,7 +47,10 @@ npm run build
 ```
 
 ### Brand catalog proxy
-Vite proxies brand search to the local Node server during development.
-Production Pages needs VITE_FATSECRET_PROXY_URL. Blockers: Firebase login, Blaze plan, FatSecret IP allowlist (box egress 104.30.175.37; function IPs differ).
+
+Local branded search: put the FatSecret consumer key and shared secret in `~/.config/fare/fatsecret.env` (never in git), then run `npm run fatsecret-proxy` beside `npm run dev`. Vite proxies `/api/fatsecret` to that process.
+
+Production branded search uses the `fatsecretSearch` Cloud Function on `pickledgerpro`. The Pages app calls that URL and sends the signed-in owner vault ID token. Keys stay in Firebase secrets. This needs Blaze billing for Secret Manager and outbound HTTPS.
+
 The Vite base, manifest scope, service worker scope, canonical URL, and app icons all use `/fare/`. Pushing `main` runs the standalone Pages workflow, which tests, typechecks, builds, validates the PWA artifact, and deploys it.
 

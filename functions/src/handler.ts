@@ -14,6 +14,8 @@ export interface ProxyEnv {
   readonly fetch?: typeof fetch;
   readonly now?: () => number;
   readonly cache?: Map<string, SearchCacheEntry>;
+  readonly requireAuth?: boolean;
+  readonly verifyIdToken?: (token: string) => Promise<boolean>;
 }
 
 const defaultCache = new Map<string, SearchCacheEntry>();
@@ -31,7 +33,7 @@ export function corsHeaders(origin: string | null): Headers {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Vary', 'Origin');
     headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    headers.set('Access-Control-Allow-Headers', 'Accept, Content-Type');
+    headers.set('Access-Control-Allow-Headers', 'Accept, Authorization, Content-Type');
     headers.set('Access-Control-Max-Age', '86400');
   }
   return headers;
@@ -64,6 +66,15 @@ export async function handleFatSecretRequest(request: Request, env: ProxyEnv = {
 
   if (request.method !== 'GET') {
     return json({ error: 'Method not allowed' }, 405, cors);
+  }
+
+  if (env.requireAuth) {
+    const header = request.headers.get('Authorization') ?? '';
+    const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
+    const allowed = Boolean(token && env.verifyIdToken && await env.verifyIdToken(token));
+    if (!allowed) {
+      return json({ error: 'unauthorized' }, 401, cors);
+    }
   }
 
   const url = new URL(request.url);

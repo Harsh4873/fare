@@ -56,6 +56,7 @@ import {
   fatSecretFoodToCatalog,
 } from '../fatsecret';
 import { addNutrition, scaleNutrition } from '../nutrition';
+import { firebaseAuth } from '../firebase';
 import type { FareStore } from '../store';
 import {
   BottomSheet,
@@ -305,7 +306,11 @@ export function AddFoodSheet({
   const apiRef = useRef<OpenFoodFactsClient | null>(null);
   if (!apiRef.current) apiRef.current = new OpenFoodFactsClient();
   const brandApiRef = useRef<FatSecretClient | null>(null);
-  if (!brandApiRef.current) brandApiRef.current = new FatSecretClient();
+  if (!brandApiRef.current) {
+    brandApiRef.current = new FatSecretClient({
+      getIdToken: async () => firebaseAuth.currentUser?.getIdToken(),
+    });
+  }
 
   const requestRef = useRef<AbortController | null>(null);
   const [lane, setLane] = useState<Lane>('usuals');

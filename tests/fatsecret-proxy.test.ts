@@ -138,4 +138,35 @@ describe('FatSecret proxy handler', () => {
     expect(text).not.toMatch(/consumer_key|oauth_signature|demo_shared_secret/i);
     expect(text).toContain('not configured');
   });
+
+  it('requires a bearer token when the production handler asks for auth', async () => {
+    const denied = await handleFatSecretRequest(
+      new Request('https://us-central1-pickledgerpro.cloudfunctions.net/fatsecretSearch?q=pizza', {
+        headers: { Origin: 'https://harsh.bet' },
+      }),
+      {
+        consumerKey: 'demo_consumer_key',
+        sharedSecret: 'demo_shared_secret',
+        requireAuth: true,
+        verifyIdToken: async () => true,
+        fetch: async () => jsonResponse({ foods: { food: [] } }),
+      },
+    );
+    expect(denied.status).toBe(401);
+
+    const allowed = await handleFatSecretRequest(
+      new Request('https://us-central1-pickledgerpro.cloudfunctions.net/fatsecretSearch?q=pizza', {
+        headers: { Origin: 'https://harsh.bet', Authorization: 'Bearer owner-token' },
+      }),
+      {
+        consumerKey: 'demo_consumer_key',
+        sharedSecret: 'demo_shared_secret',
+        requireAuth: true,
+        verifyIdToken: async (token) => token === 'owner-token',
+        fetch: async () => jsonResponse({ foods: { food: [rawFood] } }),
+        cache: new Map(),
+      },
+    );
+    expect(allowed.status).toBe(200);
+  });
 });
