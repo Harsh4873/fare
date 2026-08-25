@@ -50,6 +50,11 @@ import {
   OpenFoodFactsRateLimitError,
   type OpenFoodFactsProduct,
 } from '../open-food-facts';
+import {
+  FatSecretClient,
+  FatSecretUnavailableError,
+  fatSecretFoodToCatalog,
+} from '../fatsecret';
 import { addNutrition, scaleNutrition } from '../nutrition';
 import type { FareStore } from '../store';
 import {
@@ -141,7 +146,7 @@ function sourceKind(provenance: NutritionProvenance): SourceKind {
   if (provenance.kind === 'open-food-facts') {
     return provenance.dataQuality === 'complete' ? 'database' : 'estimated';
   }
-  if (provenance.kind === 'usda' || provenance.kind === 'restaurant-guide') {
+  if (provenance.kind === 'usda' || provenance.kind === 'restaurant-guide' || provenance.kind === 'fatsecret') {
     return provenance.dataQuality === 'complete' ? 'database' : 'estimated';
   }
   if (provenance.kind === 'saved-food' || provenance.kind === 'saved-meal') return 'history';
@@ -281,8 +286,11 @@ function friendlyApiError(error: unknown) {
   if (error instanceof OpenFoodFactsRateLimitError) {
     return `Open Food Facts needs a short pause. Try again in ${Math.max(1, Math.ceil(error.retryAfterMs / 1_000))} seconds.`;
   }
+  if (error instanceof FatSecretUnavailableError) {
+    return 'Brand catalog is not configured on this device.';
+  }
   if (error instanceof RangeError) return error.message;
-  return 'Open Food Facts could not be reached. Your local Fare data is unchanged.';
+  return 'Online food search could not be reached. Your local Fare data is unchanged.';
 }
 
 export function AddFoodSheet({
@@ -296,6 +304,8 @@ export function AddFoodSheet({
 }: AddFoodSheetProps) {
   const apiRef = useRef<OpenFoodFactsClient | null>(null);
   if (!apiRef.current) apiRef.current = new OpenFoodFactsClient();
+  const brandApiRef = useRef<FatSecretClient | null>(null);
+  if (!brandApiRef.current) brandApiRef.current = new FatSecretClient();
 
   const requestRef = useRef<AbortController | null>(null);
   const [lane, setLane] = useState<Lane>('usuals');
@@ -303,6 +313,9 @@ export function AddFoodSheet({
   const [query, setQuery] = useState('');
   const [apiQuery, setApiQuery] = useState('');
   const [apiProducts, setApiProducts] = useState<readonly OpenFoodFactsProduct[]>([]);
+  const [brandQuery, setBrandQuery] = useState('');
+  const [brandFoods, setBrandFoods] = useState<readonly CatalogFood[]>([]);
+  const [brandNote, setBrandNote] = useState<string>();
   const [loading, setLoading] = useState<LoadingKind>(null);
   const [error, setError] = useState<string>();
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -435,16 +448,43 @@ export function AddFoodSheet({
     requestRef.current = controller;
     setLoading('search');
     setError(undefined);
+    setBrandNote(undefined);
     try {
-      const result = await apiRef.current!.searchOnSubmit(submitted, {
-        limit: 12,
-        signal: controller.signal,
-      });
+      const [brandOutcome, offOutcome] = await Promise.allSettled([
+        brandApiRef.current!.searchOnSubmit(submitted, {
+          limit: 8,
+          signal: controller.signal,
+        }),
+        apiRef.current!.searchOnSubmit(submitted, {
+          limit: 12,
+          signal: controller.signal,
+        }),
+      ]);
       if (controller.signal.aborted) return;
-      setApiQuery(result.query);
-      setApiProducts(result.products);
-      if (result.products.length === 0) {
-        setError(`No packaged products matched “${result.query}”. USDA and restaurant foods above still work, or use Quick add.`);
+      const fetchedAt = new Date().toISOString();
+      if (brandOutcome.status === 'fulfilled') {
+        setBrandQuery(brandOutcome.value.query);
+        setBrandFoods(brandOutcome.value.foods.map((food) => fatSecretFoodToCatalog(food, fetchedAt)));
+      } else if (brandOutcome.reason instanceof FatSecretUnavailableError) {
+        setBrandQuery('');
+        setBrandFoods([]);
+      } else {
+        setBrandQuery(submitted);
+        setBrandFoods([]);
+        setBrandNote('Brand catalog could not be reached. USDA, menus, and packaged search below still work.');
+      }
+      if (offOutcome.status === 'fulfilled') {
+        setApiQuery(offOutcome.value.query);
+        setApiProducts(offOutcome.value.products);
+      } else {
+        setApiQuery(submitted);
+        setApiProducts([]);
+        if (!controller.signal.aborted) setError(friendlyApiError(offOutcome.reason));
+      }
+      const brandCount = brandOutcome.status === 'fulfilled' ? brandOutcome.value.foods.length : 0;
+      const offCount = offOutcome.status === 'fulfilled' ? offOutcome.value.products.length : 0;
+      if (brandCount === 0 && offCount === 0 && offOutcome.status === 'fulfilled') {
+        setError(`No brand or packaged products matched “${submitted}”. USDA and restaurant foods above still work, or use Quick add.`);
       }
     } catch (nextError) {
       if (!controller.signal.aborted) setError(friendlyApiError(nextError));
@@ -715,6 +755,11 @@ export function AddFoodSheet({
                 Restaurant values come from a published nutrition guide. Fare stores this snapshot when you log it, so later menu updates never rewrite this day.
               </p>
             ) : null}
+            {selection.kind === 'catalog' && selection.item.provenance.kind === 'fatsecret' ? (
+              <p style={muted}>
+                Brand catalog values come from FatSecret for the listed serving. Sodium, fiber, and saturated fat are not in this search result. Fare stores this snapshot when you log it.
+              </p>
+            ) : null}
             {error ? <div className="notice notice--danger" role="alert"><AlertTriangle size={17} /> {error}</div> : null}
             <button type="button" className="button button--primary button--large button--full" onClick={confirmFood}>
               Add {formatAmount(scaleNutrition(selectedNutrition, servingCount).calories)} kcal to {mealSlot}
@@ -797,10 +842,10 @@ export function AddFoodSheet({
                     </button>
                     <button type="submit" className="button button--outline button--small" disabled={loading === 'search' || query.trim().length < 2}>
                       {loading === 'search' ? <LoaderCircle className="spin" size={17} /> : <Database size={17} />}
-                      Search packaged foods
+                      Search brands and packages
                     </button>
                   </div>
-                  <p style={muted}>Typing searches this device, USDA foods, and restaurant menus. Open Food Facts is contacted only when you press packaged search.</p>
+                  <p style={muted}>Typing searches this device, USDA foods, and restaurant menus. FatSecret brands and Open Food Facts packages are contacted only when you submit search.</p>
                 </form>
 
                 {query.trim() ? (
@@ -857,6 +902,29 @@ export function AddFoodSheet({
                       />
                     ))}
                     <p style={{ ...muted, marginTop: 12 }}>USDA FoodData Central survey foods. Values are for the listed typical portion.</p>
+                  </section>
+                ) : null}
+
+                {brandQuery ? (
+                  <section>
+                    <div style={{ ...row, marginBottom: 5 }}>
+                      <strong style={{ color: 'var(--text-strong)' }}>Brand catalog · “{brandQuery}”</strong>
+                      <SourceBadge source="database" label={`${brandFoods.length} results`} />
+                    </div>
+                    {brandNote ? <p style={muted}>{brandNote}</p> : null}
+                    {brandFoods.map((item) => (
+                      <FoodResult
+                        key={item.id}
+                        name={item.name}
+                        brand={item.brand}
+                        servingLabel={item.serving.label}
+                        nutrition={item.nutritionPerServing}
+                        provenance={item.provenance}
+                        detail={item.detail}
+                        onSelect={() => beginCatalog(item)}
+                      />
+                    ))}
+                    <p style={{ ...muted, marginTop: 12 }}>FatSecret branded foods. Values are for the listed serving; compare with the restaurant or package.</p>
                   </section>
                 ) : null}
 

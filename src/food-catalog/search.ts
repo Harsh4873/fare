@@ -21,10 +21,15 @@ export function usdaCatalogLoaded(): boolean {
   return usdaRecords !== undefined;
 }
 
+const SEARCH_STOPWORDS = new Set([
+  'and', 'or', 'with', 'from', 'the', 'a', 'an', 'of', 'to', 'for', 'in', 'on', 'at', 'as',
+]);
+
 export function normalizeSearchText(value: string): string {
   return value
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[''`ʼ]/g, '')
     .toLocaleLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, ' ')
@@ -36,21 +41,35 @@ export function headingName(value: string): string {
 }
 
 function tokensFor(query: string): string[] {
-  return normalizeSearchText(query).split(' ').filter((token) => token.length > 0);
+  return normalizeSearchText(query)
+    .split(' ')
+    .filter((token) => token.length >= 2 && !SEARCH_STOPWORDS.has(token));
 }
 
 function fieldScore(name: string, brand: string, aliases: readonly string[], query: string): number | undefined {
   const tokens = tokensFor(query);
   if (tokens.length === 0) return undefined;
-  const fields = [normalizeSearchText(name), normalizeSearchText(brand), ...aliases.map(normalizeSearchText)];
-  if (!fields.some((field) => tokens.every((token) => field.includes(token)))) return undefined;
   const nameText = normalizeSearchText(name);
+  const brandText = normalizeSearchText(brand);
+  const aliasTexts = aliases.map(normalizeSearchText);
+  const combined = [nameText, brandText, ...aliasTexts].filter((field) => field.length > 0).join(' ');
+  const matched = tokens.filter((token) => combined.includes(token));
+  if (matched.length === 0) return undefined;
+  const missed = tokens.length - matched.length;
+  if (missed > 0) {
+    if (missed > 2 || !matched.some((token) => token.length >= 3)) return undefined;
+  }
   const joined = tokens.join(' ');
   let score = 12;
-  if (nameText === joined) score += 80;
-  else if (nameText.startsWith(joined)) score += 48;
-  else if (headingName(name) === joined) score += 36;
-  if (nameText.startsWith(tokens[0])) score += 8;
+  if (missed === 0) {
+    if (nameText === joined) score += 80;
+    else if (nameText.startsWith(joined)) score += 48;
+    else if (headingName(name) === joined) score += 36;
+  } else {
+    score -= 18 * missed;
+  }
+  if (nameText.startsWith(tokens[0]) || nameText.startsWith(matched[0])) score += 8;
+  if (brandText && tokens.some((token) => brandText.includes(token))) score += 10;
   score += Math.max(0, 28 - nameText.length * 0.35);
   return score;
 }
@@ -139,8 +158,12 @@ export function searchUsdaRecords(
     let score = fieldScore(record.name, '', aliases, query);
     if (score === undefined) return [];
     const original = record.originalName ?? '';
+    const haystack = `${original} ${record.name}`;
+    const queryText = normalizeSearchText(query);
     if (/\bNS as to\b/i.test(original) || /,\s*NFS\b/i.test(original)) score += 6;
-    if (/from fast food|from restaurant|from pre-cooked/i.test(original)) score -= 14;
+    const restaurantPrepared = /from fast food|from restaurant|from pre-cooked/i.test(haystack);
+    const wantsRestaurantDish = /\b(pizza|macaroni|mac|restaurant|fast food)\b/.test(queryText);
+    if (restaurantPrepared && !wantsRestaurantDish) score -= 14;
     return [{ score, record }];
   });
   scored.sort((left, right) => right.score - left.score || left.record.name.localeCompare(right.record.name));

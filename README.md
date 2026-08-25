@@ -21,9 +21,10 @@ The catalog lives in `src/breakdown/data/`.
 
 ## Food data
 
-Fare searches personal history, USDA survey foods, and curated restaurant/pantry items as you type. Packaged-product search happens only after an explicit request because Open Food Facts limits searches and specifically warns against search-as-you-type. Barcode reads use the current product endpoint. Every imported result keeps its source, serving basis, fetch time, and a data-quality note so it can be reviewed before logging.
+Fare searches personal history, USDA survey foods, and curated restaurant/pantry items as you type. Brand catalog (FatSecret) and packaged-product (Open Food Facts) search happen only after an explicit submit. Neither API is queried on each keystroke. Barcode reads use the current Open Food Facts product endpoint. Every imported result keeps its source, serving basis, fetch time, and a data-quality note so it can be reviewed before logging.
 
-- USDA FoodData Central FNDDS 2021–2023 is bundled locally (public domain). The browser never calls the USDA API: <https://fdc.nal.usda.gov/download-datasets/>
+- USDA FoodData Central FNDDS 2021–2023 is bundled locally (public domain), including pantry plates for restaurant-style cheese pizza and macaroni and cheese. Those are survey portions, not Domino's, Panera, or Costco. The browser never calls the USDA API: <https://fdc.nal.usda.gov/download-datasets/>
+- FatSecret branded foods (`foods.search`) go through a server proxy so the OAuth 1.0 consumer key and shared secret never ship in GitHub Pages JavaScript. Do not use OAuth 2.0 on this account.
 - Open Food Facts API: <https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/>
 - Open Food Facts database licensing/attribution: <https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/tutorials/license-be-on-the-legal-side/>
 
@@ -45,4 +46,8 @@ npm run typecheck
 npm run build
 ```
 
+### Brand catalog proxy
+Vite proxies brand search to the local Node server during development.
+Production Pages needs VITE_FATSECRET_PROXY_URL. Blockers: Firebase login, Blaze plan, FatSecret IP allowlist (box egress 104.30.175.37; function IPs differ).
 The Vite base, manifest scope, service worker scope, canonical URL, and app icons all use `/fare/`. Pushing `main` runs the standalone Pages workflow, which tests, typechecks, builds, validates the PWA artifact, and deploys it.
+

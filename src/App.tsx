@@ -94,6 +94,7 @@ function sourceBadge(entry: FoodEntry) {
   const kind = entry.snapshot.provenance.kind;
   if (kind === 'open-food-facts') return <SourceBadge source="database" label="Community label" />;
   if (kind === 'usda') return <SourceBadge source="database" label="USDA" />;
+  if (kind === 'fatsecret') return <SourceBadge source="database" label="FatSecret" />;
   if (kind === 'restaurant-guide') return <SourceBadge source="verified" label={entry.snapshot.provenance.providerName} />;
   if (kind === 'manual') return <SourceBadge source="custom" label="Custom" />;
   return <SourceBadge source="history" label="Your history" />;

@@ -47,6 +47,7 @@ export type NutritionSourceKind =
   | 'open-food-facts'
   | 'usda'
   | 'restaurant-guide'
+  | 'fatsecret'
   | 'saved-food'
   | 'saved-meal';
 

@@ -37,4 +37,34 @@ describe('USDA catalog search', () => {
     const item = menus.find((entry) => entry.brand === 'Chipotle' && /barbacoa/i.test(entry.name));
     expect(item?.provenance.kind).toBe('restaurant-guide');
   });
+
+  it('matches brand plus item name across fields', () => {
+    const { menus } = searchLocalCatalog('chipotle guacamole', { usda: records });
+    expect(menus.some((entry) => entry.brand === 'Chipotle' && /guacamole/i.test(entry.name))).toBe(true);
+  });
+
+  it('finds pantry mac and cheese for the everyday phrase', () => {
+    const { menus } = searchLocalCatalog('mac and cheese', { usda: records });
+    expect(menus.some((entry) => /macaroni and cheese/i.test(entry.name))).toBe(true);
+  });
+
+  it('still returns pizza when an unknown chain name is in the query', () => {
+    const { menus, usda } = searchLocalCatalog('dominos pizza', { usda: records });
+    const pizza = [...menus, ...usda].find((entry) => /pizza/i.test(entry.name));
+    expect(pizza).toBeDefined();
+    expect(pizza?.brand).not.toMatch(/domino/i);
+  });
+
+  it('finds cheese pizza for Costco-style queries without claiming Costco', () => {
+    const { menus, usda } = searchLocalCatalog('costco pizza', { usda: records });
+    expect([...menus, ...usda].some((entry) => /pizza/i.test(entry.name))).toBe(true);
+    expect([...menus, ...usda].some((entry) => /costco/i.test(entry.name) || /costco/i.test(entry.brand ?? ''))).toBe(false);
+  });
+
+  it('finds macaroni and cheese for Panera-style queries without claiming Panera', () => {
+    const { menus, usda } = searchLocalCatalog('panera mac and cheese', { usda: records });
+    const mac = [...menus, ...usda].find((entry) => /macaroni and cheese/i.test(entry.name));
+    expect(mac).toBeDefined();
+    expect(/panera/i.test(mac?.name ?? '') || /panera/i.test(mac?.brand ?? '')).toBe(false);
+  });
 });

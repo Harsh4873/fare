@@ -89,6 +89,18 @@ describe('breakdown catalog integrity', () => {
     }
   });
 
+  it('ships vegetarian pizza and mac pantry plates from FNDDS portions', () => {
+    const byId = (id: string) => GENERIC_FOODS.find((food) => food.id === id);
+    const pizza = byId('generic-cheese-pizza-restaurant');
+    const mac = byId('generic-mac-and-cheese-restaurant');
+    expect(pizza?.nutrition.calories).toBe(633);
+    expect(pizza?.tags).toContain('vegetarian');
+    expect(pizza?.tags).not.toContain('protein-main');
+    expect(mac?.nutrition.calories).toBe(347);
+    expect(mac?.aliases).toContain('mac and cheese');
+    expect(GENERIC_FOODS.filter((food) => food.category === 'Comfort').every((food) => food.tags?.includes('vegetarian'))).toBe(true);
+  });
+
   it('keeps every nutrition value plausible', () => {
     for (const food of allFoods()) assertPlausible(food);
   });

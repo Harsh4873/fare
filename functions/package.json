@@ -1,0 +1,19 @@
+{
+  "name": "fare-fatsecret-proxy",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22"
+  },
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "vite-node src/dev-server.ts"
+  },
+  "dependencies": {
+    "firebase-functions": "^6.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

@@ -5,3 +5,7 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 AGENTS.md
+.env
+.env.*
+!.env.example
+functions/.env

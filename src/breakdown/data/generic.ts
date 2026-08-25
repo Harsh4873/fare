@@ -19,6 +19,7 @@ type GenericCategory =
   | 'Vegetables'
   | 'Fruits'
   | 'Dairy'
+  | 'Comfort'
   | 'Nuts + Fats'
   | 'Sauces + Extras';
 
@@ -123,6 +124,85 @@ export const GENERIC_FOODS: readonly BreakdownFood[] = [
   item({ id: 'generic-ranch-dressing', name: 'Ranch Dressing', category: 'Sauces + Extras', servingLabel: '2 tbsp', servingGrams: 30, nutrition: { calories: 130, proteinG: 0.5, carbsG: 2, fatG: 13.5, saturatedFatG: 2, fiberG: 0, sugarG: 1.5, sodiumMg: 260 }, tags: ['dressing', 'vegetarian'], aliases: ['ranch'] }),
   item({ id: 'generic-honey', name: 'Honey', category: 'Sauces + Extras', servingLabel: '1 tbsp', servingGrams: 21, nutrition: { calories: 64, proteinG: 0, carbsG: 17, fatG: 0, saturatedFatG: 0, fiberG: 0, sugarG: 17, sodiumMg: 1 }, tags: ['vegetarian'] }),
   item({ id: 'generic-sugar', name: 'Sugar', category: 'Sauces + Extras', servingLabel: '1 tsp', servingGrams: 4, nutrition: { calories: 16, proteinG: 0, carbsG: 4, fatG: 0, saturatedFatG: 0, fiberG: 0, sugarG: 4, sodiumMg: 0 }, tags: ['vegan', 'vegetarian'] }),
+  // Comfort plates from bundled FNDDS 2021–2023 typical portions (not a named chain).
+  // FDC ids: 2708614, 2708615, 2708627, 2708676, 2708812, 2708811, 2708813.
+  item({
+    id: 'generic-cheese-pizza-restaurant',
+    name: 'Cheese Pizza (restaurant)',
+    category: 'Comfort',
+    servingLabel: 'typical restaurant portion',
+    servingGrams: 238,
+    nutrition: { calories: 633, proteinG: 27.1, carbsG: 79.3, fatG: 23.1, saturatedFatG: 10.6, fiberG: 5.5, sugarG: 8.5, sodiumMg: 1285 },
+    tags: ['grain', 'cheese', 'dairy', 'vegetarian'],
+    aliases: ['pizza', 'cheese pizza', 'restaurant pizza'],
+    portionOptions: SCALABLE,
+  }),
+  item({
+    id: 'generic-cheese-pizza-thin',
+    name: 'Cheese Pizza, thin crust (restaurant)',
+    category: 'Comfort',
+    servingLabel: 'typical restaurant thin-crust portion',
+    servingGrams: 172,
+    nutrition: { calories: 458, proteinG: 19.6, carbsG: 57.3, fatG: 16.7, saturatedFatG: 7.7, fiberG: 4, sugarG: 6.2, sodiumMg: 929 },
+    tags: ['grain', 'cheese', 'dairy', 'vegetarian'],
+    aliases: ['thin crust pizza', 'thin pizza'],
+    portionOptions: SCALABLE,
+  }),
+  item({
+    id: 'generic-veggie-pizza-restaurant',
+    name: 'Cheese Pizza with vegetables (restaurant)',
+    category: 'Comfort',
+    servingLabel: 'typical restaurant portion',
+    servingGrams: 266,
+    nutrition: { calories: 644, proteinG: 27.4, carbsG: 81.7, fatG: 23.1, saturatedFatG: 10.6, fiberG: 6, sugarG: 9.6, sodiumMg: 1287 },
+    tags: ['grain', 'cheese', 'dairy', 'vegetable', 'vegetarian'],
+    aliases: ['veggie pizza', 'vegetable pizza'],
+    portionOptions: SCALABLE,
+  }),
+  item({
+    id: 'generic-white-pizza',
+    name: 'White Pizza, thin crust',
+    category: 'Comfort',
+    servingLabel: 'typical thin-crust portion',
+    servingGrams: 184,
+    nutrition: { calories: 524, proteinG: 22.8, carbsG: 50.8, fatG: 25.2, saturatedFatG: 9.6, fiberG: 2, sugarG: 5.5, sodiumMg: 959 },
+    tags: ['grain', 'cheese', 'dairy', 'vegetarian'],
+    aliases: ['white pizza'],
+    portionOptions: SCALABLE,
+  }),
+  item({
+    id: 'generic-mac-and-cheese-restaurant',
+    name: 'Macaroni and Cheese (restaurant)',
+    category: 'Comfort',
+    servingLabel: '1 cup',
+    servingGrams: 230,
+    nutrition: { calories: 347, proteinG: 12.5, carbsG: 43.2, fatG: 14, saturatedFatG: 5, fiberG: 2.5, sugarG: 7, sodiumMg: 830 },
+    tags: ['grain', 'cheese', 'dairy', 'vegetarian'],
+    aliases: ['mac and cheese', 'macaroni and cheese', 'mac n cheese', 'restaurant mac'],
+    portionOptions: SCALABLE,
+  }),
+  item({
+    id: 'generic-mac-and-cheese',
+    name: 'Macaroni and Cheese',
+    category: 'Comfort',
+    servingLabel: '1 cup',
+    servingGrams: 230,
+    nutrition: { calories: 513, proteinG: 20, carbsG: 53.1, fatG: 24.1, saturatedFatG: 11.8, fiberG: 2.8, sugarG: 5.6, sodiumMg: 823 },
+    tags: ['grain', 'cheese', 'dairy', 'vegetarian'],
+    aliases: ['mac and cheese', 'homemade mac and cheese'],
+    portionOptions: SCALABLE,
+  }),
+  item({
+    id: 'generic-mac-and-cheese-boxed',
+    name: 'Macaroni and Cheese (boxed mix)',
+    category: 'Comfort',
+    servingLabel: '1 cup prepared',
+    servingGrams: 230,
+    nutrition: { calories: 412, proteinG: 10.7, carbsG: 51.1, fatG: 18.5, saturatedFatG: 7.4, fiberG: 2.3, sugarG: 8, sodiumMg: 370 },
+    tags: ['grain', 'cheese', 'dairy', 'vegetarian'],
+    aliases: ['boxed mac and cheese', 'packaged mac and cheese', 'easy mac'],
+    portionOptions: SCALABLE,
+  }),
 ];
 
 /**

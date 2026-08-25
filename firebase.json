@@ -2,6 +2,13 @@
   "firestore": {
     "rules": "firestore.rules"
   },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "fare",
+      "ignore": ["node_modules", ".git", ".env", "firebase-debug.log", "src"]
+    }
+  ],
   "emulators": {
     "firestore": {
       "host": "127.0.0.1",
