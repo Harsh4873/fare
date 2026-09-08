@@ -46,7 +46,7 @@ function tokensFor(query: string): string[] {
     .filter((token) => token.length >= 2 && !SEARCH_STOPWORDS.has(token));
 }
 
-function fieldScore(name: string, brand: string, aliases: readonly string[], query: string): number | undefined {
+export function fieldScore(name: string, brand: string, aliases: readonly string[], query: string): number | undefined {
   const tokens = tokensFor(query);
   if (tokens.length === 0) return undefined;
   const nameText = normalizeSearchText(name);

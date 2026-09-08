@@ -1,5 +1,7 @@
 import {
   Archive,
+  ArrowRightLeft,
+  MoreHorizontal,
   BarChart3,
   CalendarDays,
   ChevronLeft,
@@ -24,6 +26,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { AddFoodSheet } from './components/AddFoodSheet';
 import { ServingAmount } from './components/ServingAmount';
+import { SwipeRow } from './components/SwipeRow';
 import { addDays, dateRange, fromDateKey, toDateKey } from './dates';
 import {
   createNutritionSnapshot,
@@ -36,6 +39,7 @@ import { addNutrition, scaleNutrition, summarizeDay } from './nutrition';
 import { parseFareState, type FareStore, useFareStore } from './store';
 import {
   BrandMark,
+  BottomSheet,
   CircularProgress,
   EmptyState,
   IconButton,
@@ -90,16 +94,6 @@ function formatNumber(value: number, digits = 0) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(value);
 }
 
-function sourceBadge(entry: FoodEntry) {
-  const kind = entry.snapshot.provenance.kind;
-  if (kind === 'open-food-facts') return <SourceBadge source="database" label="Community label" />;
-  if (kind === 'usda') return <SourceBadge source="database" label="USDA" />;
-  if (kind === 'fatsecret') return <SourceBadge source="database" label="FatSecret" />;
-  if (kind === 'restaurant-guide') return <SourceBadge source="verified" label={entry.snapshot.provenance.providerName} />;
-  if (kind === 'manual') return <SourceBadge source="custom" label="Custom" />;
-  return <SourceBadge source="history" label="Your history" />;
-}
-
 function downloadFile(name: string, type: string, content: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const link = document.createElement('a');
@@ -150,6 +144,8 @@ function SyncPill({ sync, onClick }: { sync: FareSync; onClick: () => void }) {
   );
 }
 
+type Notify = (message: string, undo?: () => void) => void;
+
 interface TodayViewProps {
   state: FareState;
   store: FareStore;
@@ -157,14 +153,32 @@ interface TodayViewProps {
   onDateChange: (date: string) => void;
   onAdd: (slot: MealSlot) => void;
   onEdit: (entry: FoodEntry) => void;
-  onToast: (message: string) => void;
+  onToast: Notify;
 }
 
 function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast }: TodayViewProps) {
+  const [actionTarget, setActionTarget] = useState<{ ids: string[]; label: string }>();
+  const actionEntries = state.entries.filter((entry) => !entry.deleted && actionTarget?.ids.includes(entry.id));
+  const actionEntry = actionEntries.length === 1 ? actionEntries[0] : undefined;
   const summary = summarizeDay(state.entries, dateKey);
   const isToday = dateKey === toDateKey(new Date());
   const remaining = Math.max(0, state.targets.calories - summary.totals.calories);
   const yesterdayKey = addDays(dateKey, -1);
+
+  function removeEntry(entry: FoodEntry) {
+    store.deleteEntry(entry.id);
+    setActionTarget(undefined);
+    onToast(`${entry.snapshot.name} removed.`, () => store.restoreEntry(entry.id));
+  }
+
+  function moveTo(slot: MealSlot) {
+    const previous = actionEntries.filter((entry) => entry.mealSlot !== slot);
+    store.moveEntries(previous.map((entry) => entry.id), slot);
+    setActionTarget(undefined);
+    onToast(`Moved to ${MEALS.find((meal) => meal.id === slot)?.label.toLowerCase()}.`, () => {
+      for (const entry of previous) store.updateEntry(entry.id, { mealSlot: entry.mealSlot });
+    });
+  }
 
   function copyYesterdaySlot(slot: MealSlot, label: string) {
     const copied = store.copyDay(yesterdayKey, dateKey, slot);
@@ -196,7 +210,7 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
           <div className="summary-card__copy">
             <span className="eyebrow">Daily intake</span>
             <h2>{summary.entryCount ? `${summary.entryCount} item${summary.entryCount === 1 ? '' : 's'} logged` : 'Your plate is open'}</h2>
-            <p>{summary.entryCount ? 'Every item is saved as its own nutrition snapshot.' : 'Start with an Usual, search, or pick a restaurant menu.'}</p>
+            <p>{summary.entryCount ? 'Tap a food to adjust its portion.' : 'Start with an Usual, search, or pick a restaurant menu.'}</p>
           </div>
         </div>
         {state.settings.showMacroTargets && (
@@ -206,9 +220,9 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
             <MacroBar label="Fat" tone="fat" value={summary.totals.fatG} target={state.targets.fatG} valueLabel={`${formatNumber(summary.totals.fatG)} / ${state.targets.fatG} g`} />
           </div>
         )}
-        <p className="summary-card__caption">Targets are yours to set. Fare tracks; it does not prescribe.</p>
       </Panel>
 
+      {summary.entryCount > 0 ? <p className="diary-hint">Swipe left to delete · Tap ••• to move or repeat</p> : null}
       <div className="meal-stack">
         {MEALS.map((meal) => {
           const entries = state.entries
@@ -222,12 +236,16 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
             <section className="meal-section" key={meal.id}>
               <header className="meal-section__header">
                 <div><h3 className="meal-section__title">{meal.label}<span className="meal-section__time">{meal.time}</span></h3></div>
-                <span className="meal-section__total">{formatNumber(total.calories)} kcal</span>
+                <div className="meal-section__tools"><span className="meal-section__total">{formatNumber(total.calories)} kcal</span>
+                  {entries.length > 0 ? <IconButton label={`Move all ${meal.label.toLowerCase()} foods`} size="small"
+                    onClick={() => setActionTarget({ ids: entries.map((entry) => entry.id), label: `Move ${meal.label.toLowerCase()}` })}><ArrowRightLeft /></IconButton> : null}
+                </div>
               </header>
               {entries.length > 0 && (
                 <div className="meal-section__items">
                   {entries.map((entry) => (
-                    <article className="food-row food-row--interactive" key={entry.id}>
+                    <SwipeRow key={entry.id} name={entry.snapshot.name} onDelete={() => removeEntry(entry)}>
+                    <article className="food-row food-row--interactive">
                       <button type="button" className="food-row__main" onClick={() => onEdit(entry)}>
                         <span className="food-row__icon"><Utensils /></span>
                         <span className="food-row__copy">
@@ -236,20 +254,13 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
                             <span className="food-row__value">{formatNumber(entry.snapshot.nutrition.calories)}<small> kcal</small></span>
                           </span>
                           <span className="food-row__detail">{entry.snapshot.brand ? `${entry.snapshot.brand} · ` : ''}{formatNumber(entry.snapshot.servings, 2)} × {entry.snapshot.serving.label}</span>
-                          <span className="food-row__source">{sourceBadge(entry)}</span>
+                          <span className="food-row__detail">{formatNumber(entry.snapshot.nutrition.proteinG)}g protein{entry.note ? ` · ${entry.note}` : ''}</span>
                         </span>
                       </button>
-                      <div className="food-row__quick-actions">
-                        <IconButton label={`Repeat ${entry.snapshot.name}`} size="small" onClick={() => {
-                          store.copyEntry(entry.id, dateKey, meal.id);
-                          onToast(`${entry.snapshot.name} logged again.`);
-                        }}><RefreshCw /></IconButton>
-                        <IconButton label={`Delete ${entry.snapshot.name}`} variant="danger" size="small" onClick={() => {
-                          store.deleteEntry(entry.id);
-                          onToast(`${entry.snapshot.name} removed.`);
-                        }}><Trash2 /></IconButton>
-                      </div>
+                      <IconButton label={`Actions for ${entry.snapshot.name}`} size="small"
+                        onClick={() => setActionTarget({ ids: [entry.id], label: entry.snapshot.name })}><MoreHorizontal /></IconButton>
                     </article>
+                    </SwipeRow>
                   ))}
                 </div>
               )}
@@ -271,6 +282,23 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
           );
         })}
       </div>
+      <BottomSheet open={Boolean(actionTarget)} onClose={() => setActionTarget(undefined)} title={actionTarget?.label ?? 'Food actions'} width="small">
+        <div className="entry-actions">
+          <span className="field__label">Move to</span>
+          <div className="entry-actions__meals">{MEALS.map((meal) => <button type="button" className="button button--secondary" key={meal.id}
+            disabled={!actionEntries.length || actionEntries.every((entry) => entry.mealSlot === meal.id)}
+            onClick={() => moveTo(meal.id)}>{meal.label}</button>)}</div>
+          {actionEntry ? <>
+            <button type="button" className="button button--secondary" onClick={() => { setActionTarget(undefined); onEdit(actionEntry); }}>Edit portion or note</button>
+            <button type="button" className="button button--secondary" onClick={() => {
+              const copied = store.copyEntry(actionEntry.id, dateKey, actionEntry.mealSlot);
+              setActionTarget(undefined);
+              onToast(`${actionEntry.snapshot.name} logged again.`, copied ? () => store.deleteEntry(copied.id) : undefined);
+            }}><RefreshCw /> Log again</button>
+            <button type="button" className="button button--danger" onClick={() => removeEntry(actionEntry)}><Trash2 /> Delete food</button>
+          </> : null}
+        </div>
+      </BottomSheet>
     </div>
   );
 }
@@ -475,7 +503,8 @@ export default function App() {
   const [addOpen, setAddOpen] = useState(false);
   const [defaultMeal, setDefaultMeal] = useState<MealSlot>('snack');
   const [editingEntry, setEditingEntry] = useState<FoodEntry | null>(null);
-  const [toast, setToast] = useState<string>();
+  const [toast, setToast] = useState<{ message: string; undo?: () => void }>();
+  const notify: Notify = (message, undo) => setToast({ message, undo });
   const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>(() => window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 
   useEffect(() => {
@@ -518,18 +547,18 @@ export default function App() {
       </aside>
       <main className="app-main">
         <header className="app-header"><div><span className="app-header__eyebrow">Fare / {formatDate(dateKey, { month: 'short', day: 'numeric' })}</span><h1 className="app-header__title">{routeMeta.label}</h1></div><div className="app-header__actions"><SyncPill sync={sync} onClick={() => setRoute('profile')} /><button type="button" className="button button--primary" onClick={() => openAdd()}><Plus /> Log food</button></div></header>
-        {route === 'today' && <TodayView state={state} store={store} dateKey={dateKey} onDateChange={setDateKey} onAdd={openAdd} onEdit={setEditingEntry} onToast={setToast} />}
+        {route === 'today' && <TodayView state={state} store={store} dateKey={dateKey} onDateChange={setDateKey} onAdd={openAdd} onEdit={setEditingEntry} onToast={notify} />}
         {route === 'history' && <HistoryView state={state} onSelectDate={(date) => { setDateKey(date); setRoute('today'); }} />}
         {route === 'insights' && <InsightsView state={state} />}
-        {route === 'profile' && <ProfileView state={state} store={store} sync={sync} onToast={setToast} />}
+        {route === 'profile' && <ProfileView state={state} store={store} sync={sync} onToast={notify} />}
       </main>
       <nav className="bottom-nav" aria-label="Fare views">{NAVIGATION.map(({ id, label, icon: Icon }) => <a href={`#${id}`} key={id} className={`bottom-nav__item${route === id ? ' is-active' : ''}`} aria-current={route === id ? 'page' : undefined}><Icon /><span>{label}</span></a>)}</nav>
       <button type="button" className="floating-add" onClick={() => openAdd()} aria-label="Log food"><Plus /></button>
-      <AddFoodSheet open={addOpen} onClose={() => setAddOpen(false)} state={state} store={store} dateKey={dateKey} defaultMealSlot={defaultMeal} onToast={setToast} />
+      <AddFoodSheet open={addOpen} onClose={() => setAddOpen(false)} state={state} store={store} dateKey={dateKey} defaultMealSlot={defaultMeal} onToast={notify} />
       <EntryEditor entry={editingEntry} store={store} onClose={() => setEditingEntry(null)} />
       <Onboarding state={state} store={store} />
       {sync.signingOut && <div className="blocking-scrim"><LoaderCircle className="spin" /><strong>Finishing sync before clearing this device…</strong></div>}
-      {toast && <div className="toast-region"><Toast message={toast} onDismiss={() => setToast(undefined)} /></div>}
+      {toast && <div className="toast-region"><Toast message={toast.message} actionLabel={toast.undo ? "Undo" : undefined} onAction={() => { toast.undo?.(); setToast(undefined); }} onDismiss={() => setToast(undefined)} /></div>}
     </div>
   );
 }

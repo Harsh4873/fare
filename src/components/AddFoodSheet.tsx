@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ChefHat,
   Clock3,
-  Database,
   LoaderCircle,
   PackageSearch,
   Plus,
@@ -11,6 +10,7 @@ import {
   Search,
   Sparkles,
   Zap,
+  X,
 } from 'lucide-react';
 import {
   type CSSProperties,
@@ -22,6 +22,7 @@ import {
   useState,
 } from 'react';
 import { rankUsuals, type UsualSuggestion } from '../memory';
+import { rankFoodResults } from '../food-catalog/rank-results';
 import type { CatalogFood } from '../food-catalog/types';
 import {
   loadUsdaCatalog,
@@ -64,7 +65,6 @@ import {
   Panel,
   SegmentedControl,
   SourceBadge,
-  type SourceKind,
 } from '../ui';
 import { BarcodeScanner } from './BarcodeScanner';
 import { ServingAmount } from './ServingAmount';
@@ -142,18 +142,6 @@ function nutritionFromFields(fields: typeof EMPTY_NUMBERS): Nutrition {
   };
 }
 
-function sourceKind(provenance: NutritionProvenance): SourceKind {
-  if (provenance.dataQuality === 'verified') return 'verified';
-  if (provenance.kind === 'open-food-facts') {
-    return provenance.dataQuality === 'complete' ? 'database' : 'estimated';
-  }
-  if (provenance.kind === 'usda' || provenance.kind === 'restaurant-guide' || provenance.kind === 'fatsecret') {
-    return provenance.dataQuality === 'complete' ? 'database' : 'estimated';
-  }
-  if (provenance.kind === 'saved-food' || provenance.kind === 'saved-meal') return 'history';
-  return 'custom';
-}
-
 function catalogFromOpenFoodFacts(product: OpenFoodFactsProduct): CatalogFood {
   return {
     id: `off:${product.barcode}`,
@@ -196,31 +184,14 @@ function NutritionLine({ nutrition }: { nutrition: Nutrition }) {
 
 function ProvenanceNote({ provenance }: { provenance: NutritionProvenance }) {
   return (
-    <Panel variant="soft" padding="compact" style={compactStack}>
-      <div style={row}>
-        <SourceBadge source={sourceKind(provenance)} label={`${provenance.providerName} · ${qualityLabel(provenance.dataQuality)}`} />
-        {provenance.sourceUrl ? (
-          <a
-            className="text-button"
-            href={provenance.sourceUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Source
-          </a>
-        ) : null}
+    <details className="food-source-details">
+      <summary>Nutrition details · {qualityLabel(provenance.dataQuality)}</summary>
+      <div style={compactStack}>
+        <span>{provenance.providerName}</span>
+        {provenance.warnings.map((warning) => <p key={warning} style={muted}>{warning}</p>)}
+        {provenance.sourceUrl ? <a className="text-button" href={provenance.sourceUrl} target="_blank" rel="noreferrer">View source</a> : null}
       </div>
-      {provenance.warnings.length > 0 ? (
-        <div className="notice notice--warning" role="note">
-          <AlertTriangle size={17} aria-hidden="true" />
-          <div>
-            {provenance.warnings.map((warning) => <div key={warning}>{warning}</div>)}
-          </div>
-        </div>
-      ) : (
-        <p style={muted}>Nutrition is stored as a snapshot when you log it, so earlier diary entries never change silently.</p>
-      )}
-    </Panel>
+    </details>
   );
 }
 
@@ -249,12 +220,10 @@ function FoodResult({
           {[brand, servingLabel, detail].filter(Boolean).join(' · ')}
         </div>
         <NutritionLine nutrition={nutrition} />
-        <div style={{ marginTop: 8 }}>
-          <SourceBadge source={sourceKind(provenance)} label={provenance.providerName} />
-        </div>
+        <span className="food-result__source">{provenance.providerName}{provenance.dataQuality === 'partial' || provenance.dataQuality === 'insufficient' ? ' · Partial nutrition' : ''}</span>
       </div>
       <div className="food-result__actions">
-        <button type="button" className="button button--secondary button--small" onClick={onSelect}>
+        <button type="button" className="button button--secondary button--small" aria-label={`Add ${name}`} onClick={onSelect}>
           Add
         </button>
       </div>
@@ -320,7 +289,7 @@ export function AddFoodSheet({
   const [apiProducts, setApiProducts] = useState<readonly OpenFoodFactsProduct[]>([]);
   const [brandQuery, setBrandQuery] = useState('');
   const [brandFoods, setBrandFoods] = useState<readonly CatalogFood[]>([]);
-  const [brandNote, setBrandNote] = useState<string>();
+  const [searchNote, setSearchNote] = useState<string>();
   const [loading, setLoading] = useState<LoadingKind>(null);
   const [error, setError] = useState<string>();
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -355,6 +324,13 @@ export function AddFoodSheet({
     if (!catalogReady || query.trim().length < 2) return EMPTY_CATALOG;
     return searchLocalCatalog(query, { limit: 12 });
   }, [catalogReady, query]);
+
+  const searchResults = useMemo(() => rankFoodResults(query, localResults, [
+    ...catalogHits.menus,
+    ...catalogHits.usda,
+    ...(brandQuery === query.trim() ? brandFoods : []),
+    ...(apiQuery === query.trim() ? apiProducts.map(catalogFromOpenFoodFacts) : []),
+  ]), [query, localResults, catalogHits, brandQuery, brandFoods, apiQuery, apiProducts]);
 
   const selectedRestaurant = restaurantById(menuId);
   const restaurantFoods = useMemo(() => {
@@ -448,51 +424,40 @@ export function AddFoodSheet({
   async function searchDatabase(event: FormEvent) {
     event.preventDefault();
     const submitted = query.trim();
+    if (submitted.length < 2) return;
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
     setLoading('search');
     setError(undefined);
-    setBrandNote(undefined);
+    setSearchNote(undefined);
     try {
       const [brandOutcome, offOutcome] = await Promise.allSettled([
-        brandApiRef.current!.searchOnSubmit(submitted, {
-          limit: 8,
-          signal: controller.signal,
+        brandApiRef.current!.searchOnSubmit(submitted, { limit: 8, signal: controller.signal }).then((result) => {
+          if (!controller.signal.aborted) {
+            setBrandQuery(submitted);
+            setBrandFoods(result.foods.map((food) => fatSecretFoodToCatalog(food, new Date().toISOString())));
+          }
+          return result;
         }),
-        apiRef.current!.searchOnSubmit(submitted, {
-          limit: 12,
-          signal: controller.signal,
+        apiRef.current!.searchOnSubmit(submitted, { limit: 12, signal: controller.signal }).then((result) => {
+          if (!controller.signal.aborted) {
+            setApiQuery(submitted);
+            setApiProducts(result.products);
+          }
+          return result;
         }),
       ]);
       if (controller.signal.aborted) return;
-      const fetchedAt = new Date().toISOString();
-      if (brandOutcome.status === 'fulfilled') {
-        setBrandQuery(brandOutcome.value.query);
-        setBrandFoods(brandOutcome.value.foods.map((food) => fatSecretFoodToCatalog(food, fetchedAt)));
-      } else if (brandOutcome.reason instanceof FatSecretUnavailableError) {
-        setBrandQuery('');
-        setBrandFoods([]);
+      const unavailable = offOutcome.status === 'rejected'
+        || (brandOutcome.status === 'rejected' && !(brandOutcome.reason instanceof FatSecretUnavailableError));
+      if (unavailable) {
+        setSearchNote('Some online matches are unavailable. Try searching again.');
       } else {
-        setBrandQuery(submitted);
-        setBrandFoods([]);
-        setBrandNote('Brand catalog could not be reached. USDA, menus, and packaged search below still work.');
+        const brandCount = brandOutcome.status === 'fulfilled' ? brandOutcome.value.foods.length : 0;
+        const offCount = offOutcome.status === 'fulfilled' ? offOutcome.value.products.length : 0;
+        if (brandCount + offCount === 0) setSearchNote('No extra online matches. Try a different name or Quick add.');
       }
-      if (offOutcome.status === 'fulfilled') {
-        setApiQuery(offOutcome.value.query);
-        setApiProducts(offOutcome.value.products);
-      } else {
-        setApiQuery(submitted);
-        setApiProducts([]);
-        if (!controller.signal.aborted) setError(friendlyApiError(offOutcome.reason));
-      }
-      const brandCount = brandOutcome.status === 'fulfilled' ? brandOutcome.value.foods.length : 0;
-      const offCount = offOutcome.status === 'fulfilled' ? offOutcome.value.products.length : 0;
-      if (brandCount === 0 && offCount === 0 && offOutcome.status === 'fulfilled') {
-        setError(`No brand or packaged products matched “${submitted}”. USDA and restaurant foods above still work, or use Quick add.`);
-      }
-    } catch (nextError) {
-      if (!controller.signal.aborted) setError(friendlyApiError(nextError));
     } finally {
       if (requestRef.current === controller) {
         requestRef.current = null;
@@ -703,8 +668,8 @@ export function AddFoodSheet({
 
   const sheetTitle = selection ? 'Choose the amount' : 'Add food';
   const sheetDescription = selection
-    ? `Log ${selectedName ?? 'this food'} without changing its saved nutrition.`
-    : 'Fare checks your own history first. Online food data is fetched only when you ask.';
+    ? selectedName
+    : undefined;
 
   return (
     <>
@@ -715,6 +680,9 @@ export function AddFoodSheet({
         description={sheetDescription}
         width="large"
         className="add-food-sheet"
+        footer={selection && selectedNutrition ? <button type="button" className="button button--primary button--large button--full" onClick={confirmFood}>
+          Add {formatAmount(scaleNutrition(selectedNutrition, servingCount).calories)} kcal to {mealSlot}
+        </button> : undefined}
       >
         {selection && selectedServing && selectedNutrition && selectedProvenance ? (
           <div style={stack}>
@@ -744,31 +712,14 @@ export function AddFoodSheet({
               </label>
             </Panel>
 
+            <label className="field">
+              <span className="field__label">Add to</span>
+              <select className="select" value={mealSlot} onChange={(event) => setMealSlot(event.target.value as MealSlot)}>
+                {MEAL_SLOTS.map((meal) => <option key={meal.value} value={meal.value}>{meal.label}</option>)}
+              </select>
+            </label>
             <ProvenanceNote provenance={selectedProvenance} />
-            {selection.kind === 'catalog' && selection.item.provenance.kind === 'open-food-facts' ? (
-              <p style={muted}>
-                Product data is provided by Open Food Facts under its database terms. Fare saves this exact nutrition version before logging it.
-              </p>
-            ) : null}
-            {selection.kind === 'catalog' && selection.item.provenance.kind === 'usda' ? (
-              <p style={muted}>
-                USDA FoodData Central values are for a typical portion. Fare stores this snapshot when you log it, so later catalog updates never rewrite this day.
-              </p>
-            ) : null}
-            {selection.kind === 'catalog' && selection.item.provenance.kind === 'restaurant-guide' ? (
-              <p style={muted}>
-                Restaurant values come from a published nutrition guide. Fare stores this snapshot when you log it, so later menu updates never rewrite this day.
-              </p>
-            ) : null}
-            {selection.kind === 'catalog' && selection.item.provenance.kind === 'fatsecret' ? (
-              <p style={muted}>
-                Brand catalog values come from FatSecret for the listed serving. Sodium, fiber, and saturated fat are not in this search result. Fare stores this snapshot when you log it.
-              </p>
-            ) : null}
             {error ? <div className="notice notice--danger" role="alert"><AlertTriangle size={17} /> {error}</div> : null}
-            <button type="button" className="button button--primary button--large button--full" onClick={confirmFood}>
-              Add {formatAmount(scaleNutrition(selectedNutrition, servingCount).calories)} kcal to {mealSlot}
-            </button>
           </div>
         ) : (
           <div style={stack}>
@@ -830,130 +781,58 @@ export function AddFoodSheet({
                         className="input"
                         value={query}
                         onChange={(event) => {
+                          requestRef.current?.abort();
+                          requestRef.current = null;
+                          setLoading(null);
                           setQuery(event.target.value);
                           setError(undefined);
+                          setSearchNote(undefined);
                         }}
+                        aria-label="Search foods"
                         placeholder="Search foods or products"
                         autoComplete="off"
                         inputMode="search"
                         enterKeyHint="search"
                         autoFocus={shouldAutoFocusSearch()}
                       />
+                      {query ? <button type="button" className="search-clear" aria-label="Clear search" onClick={() => {
+                        requestRef.current?.abort(); requestRef.current = null; setLoading(null);
+                        setQuery(''); setSearchNote(undefined); setError(undefined);
+                      }}><X size={18} /></button> : null}
                     </div>
                   </div>
                   <div className="add-food-sheet__search-actions">
                     <button type="button" className="button button--secondary button--small" onClick={() => setScannerOpen(true)}>
-                      <ScanBarcode size={17} /> Scan barcode
+                      <ScanBarcode size={17} /> Scan
                     </button>
                     <button type="submit" className="button button--outline button--small" disabled={loading === 'search' || query.trim().length < 2}>
-                      {loading === 'search' ? <LoaderCircle className="spin" size={17} /> : <Database size={17} />}
-                      Search brands and packages
+                      {loading === 'search' ? <LoaderCircle className="spin" size={17} /> : <Search size={17} />}
+                      Search all foods
                     </button>
                   </div>
-                  <p style={muted}>Typing searches this device, USDA foods, and restaurant menus. FatSecret brands and Open Food Facts packages are contacted only when you submit search.</p>
+
                 </form>
 
                 {query.trim() ? (
-                  <section>
-                    <div style={row}>
-                      <strong style={{ color: 'var(--text-strong)' }}>On this device</strong>
-                      <SourceBadge source="history" label="Private + instant" />
+                  <section aria-label="Food search results" aria-busy={loading === 'search'}>
+                    <div className="search-results-heading">
+                      <strong>{searchResults.length} matches</strong>
+                      <span>Best matches + your habits</span>
                     </div>
-                    {localResults.length > 0 ? localResults.map(renderSuggestion) : (
-                      <p style={{ ...muted, padding: '14px 0' }}>No saved matches yet. USDA and menu foods appear below as you type, or search packaged products.</p>
-                    )}
+                    {searchResults.map((result) => result.kind === 'usual'
+                      ? renderSuggestion(result.suggestion)
+                      : <FoodResult key={result.key} name={result.item.name} brand={result.item.brand}
+                          servingLabel={result.item.serving.label} nutrition={result.item.nutritionPerServing}
+                          provenance={result.item.provenance} onSelect={() => beginCatalog(result.item)} />)}
+                    {!searchResults.length && loading !== 'search' ? <EmptyState compact icon={<PackageSearch />}
+                      title="No matches yet" description="Try Search all foods, a shorter name, or Quick add."
+                      action={<button type="button" className="button button--secondary" onClick={() => setLane('quick')}>Quick add</button>} /> : null}
+                    {loading === 'search' ? <p style={muted} role="status">Finding more matches…</p> : null}
+                    {searchNote ? <p style={muted} role="status">{searchNote}</p> : null}
                   </section>
                 ) : (
-                  <EmptyState compact icon={<PackageSearch />} title="Start with your own library" description="Logged foods, USDA survey items, and restaurant menus are searched as you type." />
+                  <EmptyState compact icon={<PackageSearch />} title="Find your next bite" description="Search a food, brand, or restaurant. Your regulars rise to the top." />
                 )}
-
-                {catalogHits.menus.length > 0 ? (
-                  <section>
-                    <div style={{ ...row, marginBottom: 5 }}>
-                      <strong style={{ color: 'var(--text-strong)' }}>Pantry and menus</strong>
-                      <SourceBadge source="database" label={`${catalogHits.menus.length} matches`} />
-                    </div>
-                    {catalogHits.menus.map((item) => (
-                      <FoodResult
-                        key={item.id}
-                        name={item.name}
-                        brand={item.brand}
-                        servingLabel={item.serving.label}
-                        nutrition={item.nutritionPerServing}
-                        provenance={item.provenance}
-                        detail={item.detail}
-                        onSelect={() => beginCatalog(item)}
-                      />
-                    ))}
-                  </section>
-                ) : null}
-
-                {catalogHits.usda.length > 0 ? (
-                  <section>
-                    <div style={{ ...row, marginBottom: 5 }}>
-                      <strong style={{ color: 'var(--text-strong)' }}>USDA foods</strong>
-                      <SourceBadge source="database" label={`${catalogHits.usda.length} matches`} />
-                    </div>
-                    {catalogHits.usda.map((item) => (
-                      <FoodResult
-                        key={item.id}
-                        name={item.name}
-                        brand={item.brand}
-                        servingLabel={item.serving.label}
-                        nutrition={item.nutritionPerServing}
-                        provenance={item.provenance}
-                        detail={item.detail}
-                        onSelect={() => beginCatalog(item)}
-                      />
-                    ))}
-                    <p style={{ ...muted, marginTop: 12 }}>USDA FoodData Central survey foods. Values are for the listed typical portion.</p>
-                  </section>
-                ) : null}
-
-                {brandQuery ? (
-                  <section>
-                    <div style={{ ...row, marginBottom: 5 }}>
-                      <strong style={{ color: 'var(--text-strong)' }}>Brand catalog · “{brandQuery}”</strong>
-                      <SourceBadge source="database" label={`${brandFoods.length} results`} />
-                    </div>
-                    {brandNote ? <p style={muted}>{brandNote}</p> : null}
-                    {brandFoods.map((item) => (
-                      <FoodResult
-                        key={item.id}
-                        name={item.name}
-                        brand={item.brand}
-                        servingLabel={item.serving.label}
-                        nutrition={item.nutritionPerServing}
-                        provenance={item.provenance}
-                        detail={item.detail}
-                        onSelect={() => beginCatalog(item)}
-                      />
-                    ))}
-                    <p style={{ ...muted, marginTop: 12 }}>FatSecret branded foods. Values are for the listed serving; compare with the restaurant or package.</p>
-                  </section>
-                ) : null}
-
-                {apiQuery ? (
-                  <section>
-                    <div style={{ ...row, marginBottom: 5 }}>
-                      <strong style={{ color: 'var(--text-strong)' }}>Packaged foods · “{apiQuery}”</strong>
-                      <SourceBadge source="database" label={`${apiProducts.length} results`} />
-                    </div>
-                    {apiProducts.map((product) => (
-                      <FoodResult
-                        key={product.barcode}
-                        name={product.name}
-                        brand={product.brand}
-                        servingLabel={product.serving.label}
-                        nutrition={product.nutritionPerServing}
-                        provenance={product.provenance}
-                        detail={product.nutriScore ? `Nutri-Score ${product.nutriScore}` : undefined}
-                        onSelect={() => beginCatalog(catalogFromOpenFoodFacts(product))}
-                      />
-                    ))}
-                    <p style={{ ...muted, marginTop: 12 }}>Community-contributed data from Open Food Facts. Compare nutrition with the package label.</p>
-                  </section>
-                ) : null}
               </div>
             ) : null}
 

@@ -19,6 +19,7 @@ import {
   type Serving,
 } from './model';
 import { scaleNutrition } from './nutrition';
+import { moveEntries as moveEntryRecords, restoreEntry as restoreEntryRecord } from './entry-actions';
 import {
   mergeStates,
   stableStringify,
@@ -68,6 +69,8 @@ export interface FareStore {
   addEntry: (entry: NewEntry) => FoodEntry | undefined;
   updateEntry: (id: string, patch: Partial<NewEntry>) => void;
   deleteEntry: (id: string) => void;
+  restoreEntry: (id: string) => void;
+  moveEntries: (ids: readonly string[], mealSlot: MealSlot) => void;
   logFood: (food: Food, options: LogFoodOptions) => FoodEntry | undefined;
   logMeal: (meal: SavedMeal, options: LogMealOptions) => FoodEntry[];
   copyEntry: (id: string, dateKey: string, mealSlot?: MealSlot) => FoodEntry | undefined;
@@ -568,6 +571,23 @@ export function useFareStore(): FareStore {
     commit({ ...current, entries: current.entries.map((entry) => entry.id === id ? tombstone : entry) }, { type: 'entries', entries: [tombstone] });
   }, [commit]);
 
+  const restoreEntry = useCallback((id: string) => {
+    const current = stateRef.current;
+    const existing = current?.entries.find((entry) => entry.id === id && entry.deleted);
+    if (!current || !existing) return;
+    const restored = restoreEntryRecord(existing, timestampAfterState(current));
+    commit({ ...current, entries: [...current.entries, restored] }, { type: 'entries', entries: [restored] });
+  }, [commit]);
+
+  const moveEntries = useCallback((ids: readonly string[], mealSlot: MealSlot) => {
+    const current = stateRef.current;
+    if (!current) return;
+    const changed = moveEntryRecords(current.entries, ids, mealSlot, timestampAfterState(current));
+    if (!changed.length) return;
+    const byId = new Map(changed.map((entry) => [entry.id, entry]));
+    commit({ ...current, entries: current.entries.map((entry) => byId.get(entry.id) ?? entry) }, { type: 'entries', entries: changed });
+  }, [commit]);
+
   const logFood = useCallback((food: Food, options: LogFoodOptions) => {
     const servings = Math.max(0.01, options.servings ?? 1);
     const consumedAt = options.consumedAt ?? new Date().toISOString();
@@ -712,6 +732,8 @@ export function useFareStore(): FareStore {
     addEntry,
     updateEntry,
     deleteEntry,
+    restoreEntry,
+    moveEntries,
     logFood,
     logMeal,
     copyEntry,

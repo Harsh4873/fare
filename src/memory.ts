@@ -74,7 +74,7 @@ function textScore(candidate: Candidate, rawQuery: string): number | undefined {
   const aliases = candidate.aliases.map(normalizeText);
   const fields = [name, brand, ...aliases];
   const tokens = query.split(' ');
-  if (!fields.some((field) => tokens.every((token) => field.includes(token)))) {
+  if (!tokens.every((token) => fields.some((field) => field.includes(token)))) {
     return undefined;
   }
   if (name === query) return 90;
