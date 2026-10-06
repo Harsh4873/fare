@@ -19,6 +19,7 @@ import {
   type Serving,
 } from './model';
 import { scaleNutrition } from './nutrition';
+import { createPersistenceQueue, type PersistenceStatus } from './persistence';
 import { moveEntries as moveEntryRecords, restoreEntry as restoreEntryRecord } from './entry-actions';
 import {
   mergeStates,
@@ -60,6 +61,9 @@ export type NewEntry = Omit<FoodEntry, 'id' | 'createdAt' | 'updatedAt' | 'delet
 export interface FareStore {
   state: FareState | null;
   storageMode: StorageMode;
+  storageStatus: PersistenceStatus['status'];
+  storageError: boolean;
+  retryPersistence: () => void;
   addFood: (food: NewFood) => Food | undefined;
   updateFood: (id: string, patch: Partial<NewFood>) => void;
   deleteFood: (id: string) => void;
@@ -374,6 +378,7 @@ async function writeIndexedDb(envelope: StorageEnvelope) {
     transaction.objectStore(STORE_NAME).put(envelope, STORE_KEY);
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error ?? new Error('Local save was interrupted.'));
   });
   database.close();
 }
@@ -436,20 +441,41 @@ export function entriesForCopy(
 export function useFareStore(): FareStore {
   const [state, setState] = useState<FareState | null>(null);
   const [storageMode, setStorageMode] = useState<StorageMode>('localStorage');
+  const [storageStatus, setStorageStatus] = useState<PersistenceStatus['status']>('saving');
+  const [storageError, setStorageError] = useState(false);
+  const [persistence] = useState(() => createPersistenceQueue<StorageEnvelope>(persistLocal, writeIndexedDb, (result) => {
+    setStorageStatus(result.status);
+    if (result.mode) setStorageMode(result.mode);
+    if (result.status !== 'saving') setStorageError(result.status === 'error');
+  }));
   const stateRef = useRef<FareState | null>(null);
   const listenersRef = useRef(new Set<FareMutationListener>());
   stateRef.current = state;
 
   const persist = useCallback((next: FareState) => {
     const envelope = { savedAt: Date.now(), state: next };
-    try { persistLocal(envelope); } catch { /* IndexedDB may still work */ }
-    void writeIndexedDb(envelope).then(() => setStorageMode('indexeddb')).catch(() => setStorageMode('localStorage'));
-  }, []);
+    void persistence.save(envelope);
+  }, [persistence]);
+
+  const retryPersistence = useCallback(() => {
+    if (stateRef.current) persist(stateRef.current);
+  }, [persist]);
+
+  useEffect(() => {
+    if (storageStatus === 'saved') return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [storageStatus]);
 
   useEffect(() => {
     let active = true;
     void (async () => {
-      const local = localEnvelope();
+      let local: StorageEnvelope | undefined;
+      try { local = localEnvelope(); } catch { /* Storage access itself may be blocked. */ }
       let indexed: StorageEnvelope | undefined;
       try {
         indexed = parseEnvelope(await readIndexedDb());
@@ -477,12 +503,12 @@ export function useFareStore(): FareStore {
         if (stableStringify(merged) === stableStringify(stateRef.current)) return;
         stateRef.current = merged;
         setState(merged);
-        void writeIndexedDb({ savedAt: Date.now(), state: merged }).catch(() => undefined);
+        persist(merged);
       } catch { /* ignore corrupt cross-tab payload */ }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [persist]);
 
   const emit = useCallback((mutation: FareMutation) => {
     listenersRef.current.forEach((listener) => listener(mutation));
@@ -704,9 +730,10 @@ export function useFareStore(): FareStore {
   }, [commit]);
 
   const clearLocalData = useCallback(async () => {
+    await persistence.settled();
     localStorage.removeItem(LOCAL_KEY);
     await clearIndexedDbStore();
-  }, []);
+  }, [persistence]);
 
   const applySyncedState = useCallback((next: FareState) => {
     const parsed = parseFareState(next);
@@ -723,6 +750,9 @@ export function useFareStore(): FareStore {
   return {
     state,
     storageMode,
+    storageStatus,
+    storageError,
+    retryPersistence,
     addFood,
     updateFood,
     deleteFood,
