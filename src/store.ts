@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isDateKey, minuteOfDay } from './dates';
-import { isOvoLactoLabeledFood } from './diet';
+import { isOvoLactoFood, isOvoLactoLabeledFood } from './diet';
 import {
   createId,
   createNutritionSnapshot,
@@ -296,6 +296,15 @@ function parseEntry(value: unknown): FoodEntry {
   };
 }
 
+function foodRecordAllowed(food: { name: string; brand?: string; aliases?: readonly string[] }): boolean {
+  return isOvoLactoLabeledFood(food.name, food.brand)
+    && (food.aliases ?? []).every((alias) => isOvoLactoFood(alias));
+}
+
+function snapshotAllowed(snapshot: { name: string; brand?: string }): boolean {
+  return isOvoLactoLabeledFood(snapshot.name, snapshot.brand);
+}
+
 export function parseFareState(value: unknown): FareState {
   const raw = object(value);
   if (raw.version !== 1) throw new Error('Unsupported Fare data version.');
@@ -334,9 +343,10 @@ export function parseFareState(value: unknown): FareState {
       showMacroTargets: booleanValue(settings.showMacroTargets, 'show macro targets'),
       updatedAt: timestamp(settings.updatedAt, 'settings updatedAt'),
     },
-    foods: raw.foods.map(parseFood),
-    meals: raw.meals.map(parseMeal),
-    entries: raw.entries.map(parseEntry),
+    // Drop live meat, fish, and gelatin records. Tombstones stay so a deletion can still sync.
+    foods: raw.foods.map(parseFood).filter((food) => food.deleted || foodRecordAllowed(food)),
+    meals: raw.meals.map(parseMeal).filter((meal) => meal.deleted || meal.items.every((item) => snapshotAllowed(item.snapshot))),
+    entries: raw.entries.map(parseEntry).filter((entry) => entry.deleted || snapshotAllowed(entry.snapshot)),
   };
 }
 
@@ -524,7 +534,7 @@ export function useFareStore(): FareStore {
 
   const addFood = useCallback((draft: NewFood) => {
     const current = stateRef.current;
-    if (!current || !isOvoLactoLabeledFood(draft.name, draft.brand)) return undefined;
+    if (!current || !foodRecordAllowed(draft)) return undefined;
     const now = timestampAfterState(current);
     const food: Food = { ...draft, id: createId('food'), createdAt: now, updatedAt: now };
     commit({ ...current, foods: [...current.foods, food] }, { type: 'foods', foods: [food] });
@@ -537,7 +547,7 @@ export function useFareStore(): FareStore {
     const existing = current.foods.find((food) => food.id === id && !food.deleted);
     if (!existing) return;
     const nextFood: Food = { ...existing, ...patch, updatedAt: timestampAfterState(current) };
-    if (!isOvoLactoLabeledFood(nextFood.name, nextFood.brand)) return;
+    if (!foodRecordAllowed(nextFood)) return;
     commit({ ...current, foods: current.foods.map((food) => food.id === id ? nextFood : food) }, { type: 'foods', foods: [nextFood] });
   }, [commit]);
 
@@ -552,6 +562,7 @@ export function useFareStore(): FareStore {
   const addMeal = useCallback((draft: NewMeal) => {
     const current = stateRef.current;
     if (!current) return undefined;
+    if (draft.items.some((item) => !snapshotAllowed(item.snapshot))) return undefined;
     const now = timestampAfterState(current);
     const meal: SavedMeal = { ...draft, id: createId('meal'), createdAt: now, updatedAt: now };
     commit({ ...current, meals: [...current.meals, meal] }, { type: 'meals', meals: [meal] });
@@ -563,6 +574,7 @@ export function useFareStore(): FareStore {
     const existing = current?.meals.find((meal) => meal.id === id && !meal.deleted);
     if (!current || !existing) return;
     const nextMeal: SavedMeal = { ...existing, ...patch, updatedAt: timestampAfterState(current) };
+    if (nextMeal.items.some((item) => !snapshotAllowed(item.snapshot))) return;
     commit({ ...current, meals: current.meals.map((meal) => meal.id === id ? nextMeal : meal) }, { type: 'meals', meals: [nextMeal] });
   }, [commit]);
 
@@ -576,7 +588,7 @@ export function useFareStore(): FareStore {
 
   const addEntry = useCallback((draft: NewEntry) => {
     const current = stateRef.current;
-    if (!current || !isOvoLactoLabeledFood(draft.snapshot.name, draft.snapshot.brand)) return undefined;
+    if (!current || !snapshotAllowed(draft.snapshot)) return undefined;
     const now = timestampAfterState(current);
     const entry: FoodEntry = { ...draft, id: createId('entry'), createdAt: now, updatedAt: now };
     commit({ ...current, entries: [...current.entries, entry] }, { type: 'entries', entries: [entry] });
@@ -588,6 +600,7 @@ export function useFareStore(): FareStore {
     const existing = current?.entries.find((entry) => entry.id === id && !entry.deleted);
     if (!current || !existing) return;
     const nextEntry: FoodEntry = { ...existing, ...patch, updatedAt: timestampAfterState(current) };
+    if (!snapshotAllowed(nextEntry.snapshot)) return;
     commit({ ...current, entries: current.entries.map((entry) => entry.id === id ? nextEntry : entry) }, { type: 'entries', entries: [nextEntry] });
   }, [commit]);
 
@@ -603,6 +616,7 @@ export function useFareStore(): FareStore {
     const current = stateRef.current;
     const existing = current?.entries.find((entry) => entry.id === id && entry.deleted);
     if (!current || !existing) return;
+    if (!snapshotAllowed(existing.snapshot)) return;
     const restored = restoreEntryRecord(existing, timestampAfterState(current));
     commit({ ...current, entries: [...current.entries, restored] }, { type: 'entries', entries: [restored] });
   }, [commit]);
@@ -634,7 +648,7 @@ export function useFareStore(): FareStore {
   const logMeal = useCallback((meal: SavedMeal, options: LogMealOptions) => {
     const current = stateRef.current;
     if (!current || meal.deleted) return [];
-    if (meal.items.some((item) => !isOvoLactoLabeledFood(item.snapshot.name, item.snapshot.brand))) return [];
+    if (meal.items.some((item) => !snapshotAllowed(item.snapshot))) return [];
     const now = timestampAfterState(current);
     const consumedAt = options.consumedAt ?? new Date().toISOString();
     const entries = meal.items.map((item): FoodEntry => ({
@@ -673,7 +687,7 @@ export function useFareStore(): FareStore {
     const current = stateRef.current;
     if (!current) return [];
     const source = entriesForCopy(current.entries, fromDateKey, mealSlot)
-      .filter((entry) => isOvoLactoLabeledFood(entry.snapshot.name, entry.snapshot.brand));
+      .filter((entry) => snapshotAllowed(entry.snapshot));
     const now = timestampAfterState(current);
     const consumedAt = new Date().toISOString();
     const entries = source.map((entry): FoodEntry => ({ ...entry, id: createId('entry'), dateKey: toDateKey, consumedAt, createdAt: now, updatedAt: now }));

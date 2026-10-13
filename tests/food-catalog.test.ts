@@ -23,7 +23,8 @@ describe('USDA catalog search', () => {
     const results = searchUsdaRecords(records, 'egg', 8);
     expect(results.some((item) => /\begg\b/i.test(item.name))).toBe(true);
     expect(results.every((item) => isOvoLactoFood(item.name))).toBe(true);
-    const chicken = searchUsdaRecords(records, 'chicken breast', 8);
+    const chicken = searchUsdaRecords(records, 'chicken', 8);
+    expect(chicken.length).toBeGreaterThan(0);
     expect(chicken.every((item) => isOvoLactoFood(item.name))).toBe(true);
     expect(chicken.every((item) => /\b(meatless|vegetarian|vegan|plant based)\b/i.test(item.name))).toBe(true);
     expect(records.every((record) => isOvoLactoUsdaRecord(record))).toBe(true);

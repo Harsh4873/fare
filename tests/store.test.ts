@@ -110,6 +110,65 @@ describe('Fare state parser', () => {
     expect(() => parseFareState(negativeCalories)).toThrow(/calories must be at least 0/i);
   });
 
+  it('drops meat foods, meals, and entries but keeps their tombstones', () => {
+    const state = validState();
+    const bacon: FoodEntry = {
+      ...state.entries[0],
+      id: 'entry-bacon',
+      snapshot: { ...state.entries[0].snapshot, name: 'Bacon' },
+    };
+    const deletedBacon: FoodEntry = {
+      ...bacon,
+      id: 'entry-bacon-deleted',
+      deleted: true,
+      deletedAt: '2026-07-12T13:00:00.000Z',
+    };
+    state.entries.push(bacon, deletedBacon);
+    state.foods.push({
+      id: 'food-bacon',
+      createdAt: '2026-07-12T12:00:00.000Z',
+      updatedAt: '2026-07-12T12:00:00.000Z',
+      name: 'Rice',
+      brand: 'Vegetarian Chicken',
+      aliases: [],
+      serving: bacon.snapshot.serving,
+      nutritionPerServing: nutrition,
+      provenance: bacon.snapshot.provenance,
+      pinned: false,
+    });
+    state.meals.push({
+      id: 'meal-bacon',
+      createdAt: '2026-07-12T12:00:00.000Z',
+      updatedAt: '2026-07-12T12:00:00.000Z',
+      name: 'Breakfast',
+      aliases: [],
+      pinned: false,
+      items: [{ id: 'item-1', servings: 1, snapshot: bacon.snapshot }],
+    });
+
+    const parsed = parseFareState(state);
+    expect(parsed.entries.map((entry) => entry.id)).toEqual(['entry-1', 'entry-bacon-deleted']);
+    expect(parsed.foods).toEqual([]);
+    expect(parsed.meals).toEqual([]);
+  });
+
+  it('keeps a branded vegetarian substitute and still drops a split meat phrase', () => {
+    const state = validState();
+    const hotDog = {
+      ...state.entries[0],
+      id: 'entry-hot-dog',
+      snapshot: { ...state.entries[0].snapshot, name: 'Vegetarian hot dog', brand: 'Lightlife' },
+    };
+    const split = {
+      ...state.entries[0],
+      id: 'entry-split',
+      snapshot: { ...state.entries[0].snapshot, name: 'Italian', brand: 'Sub' },
+    };
+    state.entries.push(hotDog, split);
+    const parsed = parseFareState(state);
+    expect(parsed.entries.map((entry) => entry.id)).toEqual(['entry-1', 'entry-hot-dog']);
+  });
+
   it('can copy one meal slot from yesterday without taking the rest of the day', () => {
     const lunch = validState().entries[0];
     const breakfast: FoodEntry = {

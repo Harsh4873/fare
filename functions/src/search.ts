@@ -1,4 +1,4 @@
-import { isOvoLactoFood } from './diet.js';
+import { isOvoLactoLabeledFood } from './diet.js';
 import { signOAuth1Get, signedQueryString } from './oauth1.js';
 
 export const FATSECRET_API_URL = 'https://platform.fatsecret.com/rest/server.api';
@@ -127,7 +127,7 @@ function scoreFood(query: string, food: SlimFatSecretFood): number {
 }
 
 export function rankSlimFoods(query: string, foods: readonly SlimFatSecretFood[]): SlimFatSecretFood[] {
-  const allowed = foods.filter((food) => isOvoLactoFood(food.name) && isOvoLactoFood(food.brand ?? ''));
+  const allowed = foods.filter((food) => isOvoLactoLabeledFood(food.name, food.brand));
   return [...allowed].sort((left, right) => {
     const delta = scoreFood(query, right) - scoreFood(query, left);
     return delta !== 0 ? delta : left.name.localeCompare(right.name);

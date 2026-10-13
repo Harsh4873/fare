@@ -1,4 +1,4 @@
-import { isOvoLactoFood } from './diet';
+import { isOvoLactoLabeledFood } from './diet';
 import type { Nutrition, NutritionDataQuality, NutritionProvenance } from './model';
 import type { CatalogFood } from './food-catalog/types';
 
@@ -223,7 +223,7 @@ export class FatSecretClient {
     const payload = asRecord(await response.json());
     const foods = (Array.isArray(payload?.foods) ? payload.foods : []).flatMap((raw) => {
       const food = parseFatSecretFood(raw);
-      if (!food || !isOvoLactoFood(food.name) || !isOvoLactoFood(food.brand ?? '')) return [];
+      if (!food || !isOvoLactoLabeledFood(food.name, food.brand)) return [];
       return [food];
     });
     const result: FatSecretSearchResult = Object.freeze({
