@@ -1,3 +1,4 @@
+import { isOvoLactoFood } from './diet';
 import type {
   Nutrition,
   NutritionDataQuality,
@@ -20,6 +21,10 @@ const SEARCH_FIELDS = [
   'image_front_small_url',
   'image_front_url',
   'categories_tags',
+  'ingredients_text',
+  'ingredients_tags',
+  'allergens_tags',
+  'ingredients_analysis_tags',
   'nutrition_grades',
   'completeness',
   'states_tags',
@@ -37,6 +42,10 @@ const PRODUCT_FIELDS = [
   'nutrition_data_per',
   'nutrition',
   'categories_tags',
+  'ingredients_text',
+  'ingredients_tags',
+  'allergens_tags',
+  'ingredients_analysis_tags',
   'nutrition_grades',
   'completeness',
   'states_tags',
@@ -379,6 +388,28 @@ export function normalizeOpenFoodFactsProduct(
   });
 }
 
+/** Drops products that are not ovo-lacto, including when only the ingredient list says so. */
+export function openFoodFactsRecordAllowed(raw: unknown): boolean {
+  const product = asRecord(raw);
+  if (!product) return false;
+  const analysis = stringArray(product.ingredients_analysis_tags);
+  if (analysis.some((tag) => tag.includes('non-vegetarian'))) return false;
+  const labeled = [
+    text(product.product_name),
+    text(product.generic_name),
+    brandName(product.brands),
+  ];
+  if (labeled.some((field) => field && !isOvoLactoFood(field))) return false;
+  const ingredients = [
+    text(product.ingredients_text),
+    text(product.ingredients_text_en),
+    ...stringArray(product.ingredients_tags).map(stripLanguageTag),
+    ...stringArray(product.categories_tags).map(stripLanguageTag),
+    ...stringArray(product.allergens_tags).map(stripLanguageTag),
+  ];
+  return ingredients.every((field) => !field || isOvoLactoFood(field, { honorAllowMarkers: false }));
+}
+
 function responseProducts(value: unknown): unknown[] {
   const response = asRecord(value);
   return response && Array.isArray(response.products) ? response.products : [];
@@ -472,6 +503,7 @@ export class OpenFoodFactsClient {
     const products = rankOpenFoodFactsProducts(
       query,
       responseProducts(payload).flatMap((raw) => {
+        if (!openFoodFactsRecordAllowed(raw)) return [];
         const product = normalizeOpenFoodFactsProduct(raw, fetchedAt);
         return product ? [product] : [];
       }),
@@ -519,7 +551,7 @@ export class OpenFoodFactsClient {
     const response = asRecord(payload);
     const rawProduct = response?.product;
     const status = number(response?.status);
-    const product = status === 0 || rawProduct === undefined
+    const product = status === 0 || rawProduct === undefined || !openFoodFactsRecordAllowed(rawProduct)
       ? null
       : normalizeOpenFoodFactsProduct(
           rawProduct,

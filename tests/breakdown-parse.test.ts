@@ -118,13 +118,13 @@ describe('parseMealText', () => {
   });
 
   it('treats size descriptors as measurements, not serving counts', () => {
-    expect(parseMealText('6 inch turkey')[0]).toEqual({ text: 'turkey', quantity: 1 });
-    expect(parseMealText('4 oz chicken')[0]).toEqual({ text: 'chicken', quantity: 1 });
+    expect(parseMealText('6 inch paneer')[0]).toEqual({ text: 'paneer', quantity: 1 });
+    expect(parseMealText('4 oz tofu')[0]).toEqual({ text: 'tofu', quantity: 1 });
     expect(parseMealText('100 g paneer')[0]).toEqual({ text: 'paneer', quantity: 1 });
   });
 
   it('reads a footlong as two 6-inch servings', () => {
-    expect(parseMealText('footlong turkey')[0]).toEqual({ text: 'turkey', quantity: 2 });
+    expect(parseMealText('footlong veggie')[0]).toEqual({ text: 'veggie', quantity: 2 });
   });
 });
 

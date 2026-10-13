@@ -445,7 +445,7 @@ export function useFareSync(store: FareStore): FareSync {
           setMessage(undefined);
         } else if (repairScheduler.hasAbandonedRepairs()) {
           setStatus('action-needed');
-          setMessage('Fare stopped retrying a change the cloud refused. Your local log is safe — sign out and back in if this keeps showing.');
+          setMessage('Fare stopped retrying a change the cloud refused. Your local log is safe. Sign out and back in if this keeps showing.');
         } else {
           markSynced();
         }

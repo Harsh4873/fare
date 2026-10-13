@@ -1,4 +1,13 @@
+import { minuteOfDay } from './dates';
 import { createId, type FoodEntry, type MealSlot } from './model';
+
+/** "Log again" uses the current clock, not the source meal's minute. */
+export function repeatConsumption(now: Date): { consumedAt: string; consumedMinute: number } {
+  return {
+    consumedAt: now.toISOString(),
+    consumedMinute: minuteOfDay(now),
+  };
+}
 
 export function moveEntries(entries: readonly FoodEntry[], ids: readonly string[], mealSlot: MealSlot, updatedAt: string): FoodEntry[] {
   const selected = new Set(ids);

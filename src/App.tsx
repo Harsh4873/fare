@@ -28,6 +28,7 @@ import { AddFoodSheet } from './components/AddFoodSheet';
 import { ServingAmount } from './components/ServingAmount';
 import { SwipeRow } from './components/SwipeRow';
 import { addDays, dateRange, fromDateKey, toDateKey } from './dates';
+import { isOvoLactoLabeledFood } from './diet';
 import {
   createNutritionSnapshot,
   type FareState,
@@ -35,7 +36,7 @@ import {
   type MealSlot,
   type Nutrition,
 } from './model';
-import { addNutrition, scaleNutrition, summarizeDay } from './nutrition';
+import { addNutrition, progressAgainstTargets, scaleNutrition, summarizeDay, summarizeWeek, visibleHistoryDateKeys } from './nutrition';
 import { parseFareState, type FareStore, useFareStore } from './store';
 import {
   BrandMark,
@@ -44,6 +45,7 @@ import {
   EmptyState,
   IconButton,
   MacroBar,
+  type MacroTone,
   Modal,
   Panel,
   SectionHeading,
@@ -94,6 +96,44 @@ function formatNumber(value: number, digits = 0) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(value);
 }
 
+function IntakeMacros({
+  totals,
+  targets,
+  showGoals,
+}: {
+  totals: Nutrition;
+  targets: FareState['targets'];
+  showGoals: boolean;
+}) {
+  const rows: Array<{ label: string; tone: MacroTone; value: number; target: number; unit: string; withGoals?: boolean }> = [
+    { label: 'Protein', tone: 'protein', value: totals.proteinG, target: targets.proteinG, unit: 'g' },
+    { label: 'Carbs', tone: 'carbs', value: totals.carbsG, target: targets.carbsG, unit: 'g' },
+    { label: 'Fat', tone: 'fat', value: totals.fatG, target: targets.fatG, unit: 'g' },
+    { label: 'Fiber', tone: 'fiber', value: totals.fiberG, target: targets.fiberG, unit: 'g', withGoals: true },
+    { label: 'Sodium', tone: 'sodium', value: totals.sodiumMg, target: targets.sodiumMg, unit: 'mg', withGoals: true },
+  ];
+  return (
+    <div className="summary-card__macros">
+      {rows.filter((row) => showGoals || !row.withGoals).map((row) => {
+        const showTrack = showGoals && row.target > 0;
+        return (
+          <MacroBar
+            key={row.label}
+            label={row.label}
+            tone={row.tone}
+            value={row.value}
+            target={row.target}
+            showTrack={showTrack}
+            valueLabel={showTrack
+              ? `${formatNumber(row.value)} / ${formatNumber(row.target)} ${row.unit}`
+              : `${formatNumber(row.value)} ${row.unit}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 function downloadFile(name: string, type: string, content: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const link = document.createElement('a');
@@ -136,8 +176,9 @@ function SyncPill({ sync, onClick }: { sync: FareSync; onClick: () => void }) {
       : sync.status === 'offline' ? 'Offline'
         : sync.status === 'signed-out' ? 'Sign in'
           : 'Needs attention';
+  const accessible = sync.message ? `${label}. ${sync.message}` : label;
   return (
-    <button type="button" className={`sync-pill sync-pill--${sync.status}`} onClick={onClick} title={sync.message}>
+    <button type="button" className={`sync-pill sync-pill--${sync.status}`} onClick={onClick} title={sync.message} aria-label={accessible}>
       {sync.status === 'syncing' ? <LoaderCircle className="spin" /> : sync.status === 'offline' ? <CloudOff /> : <Cloud />}
       <span>{label}</span>
     </button>
@@ -162,7 +203,24 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
   const actionEntry = actionEntries.length === 1 ? actionEntries[0] : undefined;
   const summary = summarizeDay(state.entries, dateKey);
   const isToday = dateKey === toDateKey(new Date());
-  const remaining = Math.max(0, state.targets.calories - summary.totals.calories);
+  const showGoals = state.settings.showMacroTargets;
+  const calorieTarget = state.targets.calories;
+  const calorieProgress = progressAgainstTargets(summary.totals, state.targets).calories;
+  const overTarget = calorieProgress.over > 0;
+  const calorieValueText = !showGoals
+    ? `${formatNumber(summary.totals.calories)} calories logged`
+    : calorieTarget <= 0
+      ? `${formatNumber(summary.totals.calories)} calories logged. No calorie target set.`
+      : overTarget
+        ? `${formatNumber(summary.totals.calories)} of ${formatNumber(calorieTarget)} calories, ${formatNumber(calorieProgress.over)} over target`
+        : `${formatNumber(summary.totals.calories)} of ${formatNumber(calorieTarget)} calories, ${formatNumber(calorieProgress.remaining)} remaining`;
+  const calorieDetail = !showGoals
+    ? `${summary.entryCount} logged`
+    : calorieTarget <= 0
+      ? 'No calorie target'
+      : overTarget
+        ? `${formatNumber(calorieProgress.over)} kcal over`
+        : `${formatNumber(calorieProgress.remaining)} kcal remaining`;
   const yesterdayKey = addDays(dateKey, -1);
 
   function removeEntry(entry: FoodEntry) {
@@ -192,7 +250,7 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
     <div className="page page-stack">
       <div className="date-toolbar">
         <IconButton label="Previous day" onClick={() => onDateChange(addDays(dateKey, -1))}><ChevronLeft /></IconButton>
-        <button type="button" className="date-toolbar__label" onClick={() => onDateChange(toDateKey(new Date()))}>
+        <button type="button" className="date-toolbar__label" aria-label={isToday ? undefined : 'Back to today'} onClick={() => onDateChange(toDateKey(new Date()))}>
           <span>{isToday ? 'Today' : formatDate(dateKey, { weekday: 'long' })}</span>
           <strong>{formatDate(dateKey, { month: 'long', day: 'numeric', year: 'numeric' })}</strong>
         </button>
@@ -203,9 +261,12 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
         <div className="summary-card__hero">
           <CircularProgress
             value={summary.totals.calories}
-            max={state.targets.calories}
+            max={showGoals ? calorieTarget : 0}
+            over={showGoals && overTarget}
+            accessibleName="Calories"
+            valueText={calorieValueText}
             label={formatNumber(summary.totals.calories)}
-            detail={state.settings.showMacroTargets ? `${formatNumber(remaining)} kcal remaining` : `${summary.entryCount} logged`}
+            detail={calorieDetail}
           />
           <div className="summary-card__copy">
             <span className="eyebrow">Daily intake</span>
@@ -213,13 +274,7 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
             <p>{summary.entryCount ? 'Tap a food to adjust its portion.' : 'Start with an Usual, search, or pick a restaurant menu.'}</p>
           </div>
         </div>
-        {state.settings.showMacroTargets && (
-          <div className="summary-card__macros">
-            <MacroBar label="Protein" tone="protein" value={summary.totals.proteinG} target={state.targets.proteinG} valueLabel={`${formatNumber(summary.totals.proteinG)} / ${state.targets.proteinG} g`} />
-            <MacroBar label="Carbs" tone="carbs" value={summary.totals.carbsG} target={state.targets.carbsG} valueLabel={`${formatNumber(summary.totals.carbsG)} / ${state.targets.carbsG} g`} />
-            <MacroBar label="Fat" tone="fat" value={summary.totals.fatG} target={state.targets.fatG} valueLabel={`${formatNumber(summary.totals.fatG)} / ${state.targets.fatG} g`} />
-          </div>
-        )}
+        <IntakeMacros totals={summary.totals} targets={state.targets} showGoals={showGoals} />
       </Panel>
 
       {summary.entryCount > 0 ? <p className="diary-hint">Swipe left to delete · Tap ••• to move or repeat</p> : null}
@@ -229,7 +284,10 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
             .filter((entry) => !entry.deleted && entry.dateKey === dateKey && entry.mealSlot === meal.id)
             .sort((left, right) => left.consumedAt.localeCompare(right.consumedAt));
           const yesterdayEntries = state.entries.filter((entry) =>
-            !entry.deleted && entry.dateKey === yesterdayKey && entry.mealSlot === meal.id,
+            !entry.deleted
+            && entry.dateKey === yesterdayKey
+            && entry.mealSlot === meal.id
+            && isOvoLactoLabeledFood(entry.snapshot.name, entry.snapshot.brand),
           );
           const total = addNutrition(...entries.map((entry) => entry.snapshot.nutrition));
           return (
@@ -290,11 +348,13 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
             onClick={() => moveTo(meal.id)}>{meal.label}</button>)}</div>
           {actionEntry ? <>
             <button type="button" className="button button--secondary" onClick={() => { setActionTarget(undefined); onEdit(actionEntry); }}>Edit portion or note</button>
-            <button type="button" className="button button--secondary" onClick={() => {
-              const copied = store.copyEntry(actionEntry.id, dateKey, actionEntry.mealSlot);
-              setActionTarget(undefined);
-              onToast(`${actionEntry.snapshot.name} logged again.`, copied ? () => store.deleteEntry(copied.id) : undefined);
-            }}><RefreshCw /> Log again</button>
+            {isOvoLactoLabeledFood(actionEntry.snapshot.name, actionEntry.snapshot.brand) ? (
+              <button type="button" className="button button--secondary" onClick={() => {
+                const copied = store.copyEntry(actionEntry.id, dateKey, actionEntry.mealSlot);
+                setActionTarget(undefined);
+                if (copied) onToast(`${actionEntry.snapshot.name} logged again.`, () => store.deleteEntry(copied.id));
+              }}><RefreshCw /> Log again</button>
+            ) : null}
             <button type="button" className="button button--danger" onClick={() => removeEntry(actionEntry)}><Trash2 /> Delete food</button>
           </> : null}
         </div>
@@ -305,10 +365,21 @@ function TodayView({ state, store, dateKey, onDateChange, onAdd, onEdit, onToast
 
 function HistoryView({ state, onSelectDate }: { state: FareState; onSelectDate: (date: string) => void }) {
   const today = toDateKey(new Date());
-  const days = dateRange(addDays(today, -20), today).reverse().map((dateKey) => summarizeDay(state.entries, dateKey));
+  const days = visibleHistoryDateKeys(state.entries, today).map((dateKey) => summarizeDay(state.entries, dateKey));
   return (
     <div className="page page-stack">
-      <SectionHeading size="large" eyebrow="Diary archive" title="History" description="Review logged days without treating a blank day as zero intake." />
+      <SectionHeading size="large" eyebrow="Diary archive" title="History" description="The last three weeks, plus every older day that has a log. A blank day is not zero intake." />
+      <label className="history-jump">
+        <span>Open a day</span>
+        <input
+          type="date"
+          max={today}
+          aria-label="Open a day in the diary"
+          onChange={(event) => {
+            if (event.target.value) onSelectDate(event.target.value);
+          }}
+        />
+      </label>
       <div className="history-list">
         {days.map((day) => (
           <button type="button" className={`history-day${day.entryCount ? '' : ' history-day--empty'}`} key={day.dateKey} onClick={() => onSelectDate(day.dateKey)}>
@@ -318,7 +389,7 @@ function HistoryView({ state, onSelectDate }: { state: FareState; onSelectDate: 
               <span className="history-day__macro">Carbs<strong>{formatNumber(day.totals.carbsG)} g</strong></span>
               <span className="history-day__macro">Fat<strong>{formatNumber(day.totals.fatG)} g</strong></span>
             </span>
-            <strong className="history-day__calories">{day.entryCount ? formatNumber(day.totals.calories) : '—'}<small>{day.entryCount ? ' kcal' : ''}</small></strong>
+            <strong className="history-day__calories">{day.entryCount ? formatNumber(day.totals.calories) : '–'}<small>{day.entryCount ? ' kcal' : ''}</small></strong>
           </button>
         ))}
       </div>
@@ -326,7 +397,7 @@ function HistoryView({ state, onSelectDate }: { state: FareState; onSelectDate: 
   );
 }
 
-function InsightsView({ state }: { state: FareState }) {
+function InsightsView({ state, onSelectDate }: { state: FareState; onSelectDate: (date: string) => void }) {
   const [range, setRange] = useState<'7' | '30'>('7');
   const count = Number(range);
   const today = toDateKey(new Date());
@@ -335,41 +406,69 @@ function InsightsView({ state }: { state: FareState }) {
   const totals = addNutrition(...logged.map((day) => day.totals));
   const average = scaleNutrition(totals, logged.length ? 1 / logged.length : 0);
   const maxCalories = Math.max(state.targets.calories, ...days.map((day) => day.totals.calories), 1);
-  const frequency = new Map<string, { name: string; count: number; calories: number }>();
+  const frequency = new Map<string, { id: string; name: string; count: number; calories: number }>();
   state.entries.filter((entry) => !entry.deleted && days.some((day) => day.dateKey === entry.dateKey)).forEach((entry) => {
     const key = `${entry.snapshot.name}|${entry.snapshot.brand ?? ''}`.toLocaleLowerCase();
-    const current = frequency.get(key) ?? { name: entry.snapshot.name, count: 0, calories: 0 };
+    const current = frequency.get(key) ?? { id: key, name: entry.snapshot.name, count: 0, calories: 0 };
     current.count += 1;
     current.calories += entry.snapshot.nutrition.calories;
     frequency.set(key, current);
   });
   const frequent = [...frequency.values()].sort((left, right) => right.count - left.count || right.calories - left.calories).slice(0, 6);
+  const week = summarizeWeek(state.entries, today, state.settings.weekStartsOn);
+  const weekStartLabel = state.settings.weekStartsOn === 0 ? 'Sunday' : 'Monday';
   const byMeal = MEALS.map((meal) => ({ meal, total: addNutrition(...logged.map((day) => day.byMeal[meal.id])).calories })).sort((left, right) => right.total - left.total);
 
   return (
     <div className="page page-stack">
-      <SectionHeading size="large" eyebrow="Patterns, not judgment" title="Insights" description="Averages use logged days only. Missing days remain missing—not zero." action={<SegmentedControl value={range} onChange={setRange} label="Insight range" options={[{ value: '7', label: '7 days' }, { value: '30', label: '30 days' }]} size="small" />} />
+      <SectionHeading size="large" eyebrow="Patterns, not judgment" title="Insights" description="Averages use logged days only. Missing days remain missing, not zero." action={<SegmentedControl value={range} onChange={setRange} label="Insight range" options={[{ value: '7', label: '7 days' }, { value: '30', label: '30 days' }]} size="small" />} />
       <div className="card-grid card-grid--four">
         <article className="stat-card stat-card--calories"><span className="stat-card__header">Average calories</span><strong className="stat-card__value">{formatNumber(average.calories)}</strong><span className="stat-card__detail">Across {logged.length} logged day{logged.length === 1 ? '' : 's'}</span></article>
         <article className="stat-card stat-card--protein"><span className="stat-card__header">Average protein</span><strong className="stat-card__value">{formatNumber(average.proteinG)} g</strong><span className="stat-card__detail">Logged-day average</span></article>
         <article className="stat-card stat-card--carbs"><span className="stat-card__header">Average carbs</span><strong className="stat-card__value">{formatNumber(average.carbsG)} g</strong><span className="stat-card__detail">Logged-day average</span></article>
         <article className="stat-card stat-card--fat"><span className="stat-card__header">Average fat</span><strong className="stat-card__value">{formatNumber(average.fatG)} g</strong><span className="stat-card__detail">Logged-day average</span></article>
+        <article className="stat-card stat-card--fiber"><span className="stat-card__header">Average fiber</span><strong className="stat-card__value">{formatNumber(average.fiberG)} g</strong><span className="stat-card__detail">Logged-day average</span></article>
+        <article className="stat-card stat-card--sodium"><span className="stat-card__header">Average sodium</span><strong className="stat-card__value">{formatNumber(average.sodiumMg)} mg</strong><span className="stat-card__detail">Logged-day average</span></article>
       </div>
+
+      <Panel>
+        <SectionHeading
+          title="This week"
+          size="small"
+          description={`Starts ${weekStartLabel}. ${formatDate(week.startDateKey, { month: 'short', day: 'numeric' })} through ${formatDate(week.endDateKey, { month: 'short', day: 'numeric' })}.`}
+        />
+        <p className="chart-caption">
+          {week.daysWithEntries
+            ? `${formatNumber(week.dailyAverage.calories)} kcal average across ${week.daysWithEntries} logged day${week.daysWithEntries === 1 ? '' : 's'}.`
+            : 'No foods logged this week yet.'}
+        </p>
+      </Panel>
 
       <Panel className="chart-card">
         <div className="chart-header"><div><h3 className="chart-title">Calories by day</h3><p className="chart-caption">Blank bars are unlogged days.</p></div><SourceBadge source="history" label={`${logged.length}/${count} days logged`} /></div>
-        <div className="bar-chart" role="img" aria-label={`Calorie totals across the last ${count} days`}>
-          {days.map((day) => (
-            <div className="bar-chart__group" key={day.dateKey} title={day.entryCount ? `${formatNumber(day.totals.calories)} calories` : 'Not logged'}>
-              <span className={`bar-chart__bar${day.entryCount ? '' : ' is-empty'}`} style={{ height: day.entryCount ? `${Math.max(3, (day.totals.calories / maxCalories) * 100)}%` : '3%' }} />
-              <span className="bar-chart__label">{formatDate(day.dateKey, { weekday: 'narrow' })}</span>
-            </div>
-          ))}
+        <div className="bar-chart" role="list" aria-label={`Calorie totals across the last ${count} days`}>
+          {days.map((day) => {
+            const caloriesLabel = day.entryCount ? `${formatNumber(day.totals.calories)} calories` : 'Not logged';
+            const over = state.targets.calories > 0 && day.entryCount > 0 && day.totals.calories > state.targets.calories;
+            return (
+              <div className="bar-chart__group" role="listitem" key={day.dateKey}>
+                <button
+                  type="button"
+                  className="bar-chart__button"
+                  aria-label={`${formatDate(day.dateKey, { weekday: 'long', month: 'long', day: 'numeric' })}, ${caloriesLabel}`}
+                  onClick={() => onSelectDate(day.dateKey)}
+                >
+                  <span className={`bar-chart__bar${day.entryCount ? '' : ' is-empty'}${over ? ' is-over' : ''}`} style={{ height: day.entryCount ? `${Math.max(3, (day.totals.calories / maxCalories) * 100)}%` : '3%' }} />
+                  <span className="bar-chart__label">{formatDate(day.dateKey, { month: 'numeric', day: 'numeric' })}</span>
+                </button>
+              </div>
+            );
+          })}
         </div>
       </Panel>
 
       <div className="card-grid card-grid--two">
-        <Panel><SectionHeading title="Most repeated" size="small" description="Foods that keep showing up in your log." />{frequent.length ? <div className="list">{frequent.map((item, index) => <div className="list-row" key={item.name}><span className="list-row__icon">{index + 1}</span><span className="list-row__copy"><strong className="list-row__title">{item.name}</strong><span className="list-row__detail">{item.count} logs</span></span><span className="list-row__value">{formatNumber(item.calories)} kcal</span></div>)}</div> : <EmptyState compact title="Log a few foods first" description="Repeat patterns will show here." />}</Panel>
+        <Panel><SectionHeading title="Most repeated" size="small" description="Foods that keep showing up in your log." />{frequent.length ? <div className="list">{frequent.map((item, index) => <div className="list-row" key={item.id}><span className="list-row__icon">{index + 1}</span><span className="list-row__copy"><strong className="list-row__title">{item.name}</strong><span className="list-row__detail">{item.count} logs</span></span><span className="list-row__value">{formatNumber(item.calories)} kcal</span></div>)}</div> : <EmptyState compact title="Log a few foods first" description="Repeat patterns will show here." />}</Panel>
         <Panel><SectionHeading title="Meal contribution" size="small" description="Calories by meal across logged days." /><div className="list">{byMeal.map(({ meal, total }) => <div className="list-row" key={meal.id}><span className="list-row__copy"><strong className="list-row__title">{meal.label}</strong><span className="list-row__detail">{totals.calories ? `${formatNumber((total / totals.calories) * 100)}% of logged calories` : 'No data'}</span></span><span className="list-row__value">{formatNumber(total)} kcal</span></div>)}</div></Panel>
       </div>
     </div>
@@ -438,8 +537,8 @@ function ProfileView({ state, store, sync, onToast }: { state: FareState; store:
           <SectionHeading title="Appearance + display" size="small" />
           <div className="settings-list">
             <div className="settings-row"><span className="settings-row__copy"><strong>Theme</strong><span>System follows your iPhone or Mac.</span></span><SegmentedControl value={state.settings.theme} onChange={(theme) => store.updateSettings({ theme })} label="Theme" options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} size="small" /></div>
-            <label className="settings-row"><span className="settings-row__copy"><strong>Show targets</strong><span>Hide goal visuals while still tracking intake.</span></span><span className="switch"><input type="checkbox" checked={state.settings.showMacroTargets} onChange={(event) => store.updateSettings({ showMacroTargets: event.target.checked })} /><span className="switch__track" /></span></label>
-            <div className="settings-row"><span className="settings-row__copy"><strong>Week starts</strong><span>Used by weekly summaries.</span></span><SegmentedControl value={String(state.settings.weekStartsOn) as '0' | '1'} onChange={(value) => store.updateSettings({ weekStartsOn: Number(value) as 0 | 1 })} label="Week starts" options={[{ value: '1', label: 'Mon' }, { value: '0', label: 'Sun' }]} size="small" /></div>
+            <label className="settings-row"><span className="settings-row__copy"><strong>Show targets</strong><span>Goal marks stay optional. Protein, carbs, and fat stay on the day.</span></span><span className="switch"><input type="checkbox" checked={state.settings.showMacroTargets} onChange={(event) => store.updateSettings({ showMacroTargets: event.target.checked })} /><span className="switch__track" /></span></label>
+            <div className="settings-row"><span className="settings-row__copy"><strong>Week starts</strong><span>Sets the week shown in Insights.</span></span><SegmentedControl value={String(state.settings.weekStartsOn) as '0' | '1'} onChange={(value) => store.updateSettings({ weekStartsOn: Number(value) as 0 | 1 })} label="Week starts" options={[{ value: '1', label: 'Mon' }, { value: '0', label: 'Sun' }]} size="small" /></div>
           </div>
         </Panel>
         <Panel>
@@ -550,7 +649,7 @@ export default function App() {
         <header className="app-header"><div><span className="app-header__eyebrow">Fare / {formatDate(dateKey, { month: 'short', day: 'numeric' })}</span><h1 className="app-header__title">{routeMeta.label}</h1></div><div className="app-header__actions"><SyncPill sync={sync} onClick={() => setRoute('profile')} /><button type="button" className="button button--primary" onClick={() => openAdd()}><Plus /> Log food</button></div></header>
         {route === 'today' && <TodayView state={state} store={store} dateKey={dateKey} onDateChange={setDateKey} onAdd={openAdd} onEdit={setEditingEntry} onToast={notify} />}
         {route === 'history' && <HistoryView state={state} onSelectDate={(date) => { setDateKey(date); setRoute('today'); }} />}
-        {route === 'insights' && <InsightsView state={state} />}
+        {route === 'insights' && <InsightsView state={state} onSelectDate={(date) => { setDateKey(date); setRoute('today'); }} />}
         {route === 'profile' && <ProfileView state={state} store={store} sync={sync} onToast={notify} />}
       </main>
       <nav className="bottom-nav" aria-label="Fare views">{NAVIGATION.map(({ id, label, icon: Icon }) => <a href={`#${id}`} key={id} className={`bottom-nav__item${route === id ? ' is-active' : ''}`} aria-current={route === id ? 'page' : undefined}><Icon /><span>{label}</span></a>)}</nav>

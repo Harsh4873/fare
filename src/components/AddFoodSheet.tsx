@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { isOvoLactoLabeledFood } from '../diet';
 import { rankUsuals, type UsualSuggestion } from '../memory';
 import { rankFoodResults } from '../food-catalog/rank-results';
 import type { CatalogFood } from '../food-catalog/types';
@@ -285,6 +286,7 @@ export function AddFoodSheet({
   const [lane, setLane] = useState<Lane>('usuals');
   const [mealSlot, setMealSlot] = useState<MealSlot>(defaultMealSlot);
   const [query, setQuery] = useState('');
+  const [catalogQuery, setCatalogQuery] = useState('');
   const [apiQuery, setApiQuery] = useState('');
   const [apiProducts, setApiProducts] = useState<readonly OpenFoodFactsProduct[]>([]);
   const [brandQuery, setBrandQuery] = useState('');
@@ -321,16 +323,15 @@ export function AddFoodSheet({
   }, [dateKey, mealSlot, query, state]);
 
   const catalogHits = useMemo(() => {
-    if (!catalogReady || query.trim().length < 2) return EMPTY_CATALOG;
-    return searchLocalCatalog(query, { limit: 12 });
-  }, [catalogReady, query]);
+    if (!catalogReady || catalogQuery.trim().length < 2) return EMPTY_CATALOG;
+    return searchLocalCatalog(catalogQuery, { limit: 12 });
+  }, [catalogReady, catalogQuery]);
 
   const searchResults = useMemo(() => rankFoodResults(query, localResults, [
-    ...catalogHits.menus,
-    ...catalogHits.usda,
+    ...(catalogQuery.trim() === query.trim() ? [...catalogHits.menus, ...catalogHits.usda] : []),
     ...(brandQuery === query.trim() ? brandFoods : []),
     ...(apiQuery === query.trim() ? apiProducts.map(catalogFromOpenFoodFacts) : []),
-  ]), [query, localResults, catalogHits, brandQuery, brandFoods, apiQuery, apiProducts]);
+  ]), [query, catalogQuery, localResults, catalogHits, brandQuery, brandFoods, apiQuery, apiProducts]);
 
   const selectedRestaurant = restaurantById(menuId);
   const restaurantFoods = useMemo(() => {
@@ -361,6 +362,11 @@ export function AddFoodSheet({
     }
     return ordered;
   }, [menuId, restaurantFoods, selectedRestaurant]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setCatalogQuery(query), 160);
+    return () => window.clearTimeout(handle);
+  }, [query]);
 
   useEffect(() => {
     if (open) {
@@ -407,6 +413,10 @@ export function AddFoodSheet({
   }
 
   function logMeal(meal: SavedMeal) {
+    if (meal.items.some((item) => !isOvoLactoLabeledFood(item.snapshot.name, item.snapshot.brand))) {
+      setError('That saved meal includes a food outside the vegetarian catalog.');
+      return;
+    }
     const entries = store.logMeal(meal, { dateKey, mealSlot });
     if (entries.length === 0) {
       setError('This saved meal does not contain any foods yet.');
@@ -486,7 +496,7 @@ export function AddFoodSheet({
       const product = await apiRef.current!.lookupBarcode(barcode, { signal: controller.signal });
       if (controller.signal.aborted) return;
       if (!product) {
-        setError('That barcode is not in Open Food Facts yet. Quick-add it instead.');
+        setError('That barcode is not in the vegetarian catalog. Quick-add it instead.');
         setLane('quick');
         return;
       }
@@ -568,6 +578,10 @@ export function AddFoodSheet({
     const hasMacros = nutrition.proteinG > 0 || nutrition.carbsG > 0 || nutrition.fatG > 0;
     const warnings = hasMacros ? [] : ['Macros were not entered for this quick add.'];
     const name = quickName.trim() || 'Quick add';
+    if (!isOvoLactoLabeledFood(name)) {
+      setError('That name is outside the vegetarian catalog. Eggs and dairy are fine.');
+      return;
+    }
     const entry = store.addEntry({
       dateKey,
       consumedAt: new Date().toISOString(),
@@ -883,7 +897,7 @@ export function AddFoodSheet({
                         className="input"
                         value={menuQuery}
                         onChange={(event) => setMenuQuery(event.target.value)}
-                        placeholder="Chicken, dressing, rice…"
+                        placeholder="Paneer, eggs, rice, salad…"
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}

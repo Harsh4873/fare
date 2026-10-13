@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   normalizeOpenFoodFactsProduct,
+  openFoodFactsRecordAllowed,
   OpenFoodFactsClient,
   OpenFoodFactsRateLimitError,
   rankOpenFoodFactsProducts,
@@ -184,6 +185,43 @@ describe('OpenFoodFactsClient', () => {
     await expect(client.lookupBarcode('99999')).rejects.toBeInstanceOf(
       OpenFoodFactsRateLimitError,
     );
+  });
+
+  it('hides meat and gelatin products from search and barcode lookup', async () => {
+    expect(openFoodFactsRecordAllowed({
+      ...rawProduct,
+      product_name: 'Bacon Mac and Cheese',
+      ingredients_text: 'bacon, cheese',
+    })).toBe(false);
+    expect(openFoodFactsRecordAllowed({
+      ...rawProduct,
+      product_name: 'Gelatin dessert',
+      ingredients_tags: ['en:gelatin'],
+    })).toBe(false);
+    expect(openFoodFactsRecordAllowed({
+      ...rawProduct,
+      product_name: 'Garden salad',
+      ingredients_text: 'chicken, vegetarian dressing',
+    })).toBe(false);
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes('/cgi/search.pl')) {
+        return jsonResponse({
+          count: 2,
+          products: [
+            rawProduct,
+            { ...rawProduct, code: '999', product_name: 'Bacon Mac and Cheese', ingredients_text: 'bacon, cheese' },
+          ],
+        });
+      }
+      return jsonResponse({
+        product: { ...rawProduct, product_name: 'Gelatin dessert', ingredients_tags: ['en:gelatin'] },
+      });
+    });
+    const client = new OpenFoodFactsClient({ fetch, now: () => Date.parse('2026-07-12T00:00:00.000Z') });
+    const result = await client.searchOnSubmit('mac', { limit: 5 });
+    expect(result.products.map((product) => product.name)).toEqual(['Cafe Latte Protein Shake']);
+    expect(await client.lookupBarcode('0123456789012')).toBeNull();
   });
 
   it('ranks complete, query-matching products ahead of sparse ones', () => {

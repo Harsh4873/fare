@@ -188,8 +188,8 @@ describe('buildInsights', () => {
 
   it('flags low protein payoff for calorie-heavy components', () => {
     const tortilla = component(food('Butter Tortilla', { calories: 300, proteinG: 2 }));
-    const chicken = component(food('Chicken', { calories: 165, proteinG: 31 }));
-    const insights = buildInsights(analyzeMeal([tortilla, chicken]));
+    const paneer = component(food('Paneer', { calories: 165, proteinG: 31 }));
+    const insights = buildInsights(analyzeMeal([tortilla, paneer]));
     const flag = insights.find((insight) => insight.id === 'low-protein-payoff');
     expect(flag?.body).toContain('Butter Tortilla');
   });
@@ -198,11 +198,11 @@ describe('buildInsights', () => {
     const beans = component(
       food('Beans', { calories: 130, proteinG: 8, fiberG: 7 }, { tags: ['legume'] }),
     );
-    const chicken = component(food('Chicken', { calories: 165, proteinG: 31, fiberG: 0 }));
-    const insights = buildInsights(analyzeMeal([beans, chicken]));
+    const paneer = component(food('Paneer', { calories: 165, proteinG: 31, fiberG: 0 }));
+    const insights = buildInsights(analyzeMeal([beans, paneer]));
     expect(insights.find((insight) => insight.id === 'plant-fiber')?.tone).toBe('positive');
     const workhorse = insights.find((insight) => insight.id === 'protein-workhorse');
-    expect(workhorse?.body).toContain('Chicken');
+    expect(workhorse?.body).toContain('Paneer');
   });
 
   it('notes estimates and never exceeds four insights', () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isOvoLactoFood, isOvoLactoUsdaRecord } from '../src/diet';
 import {
   headingName,
   searchLocalCatalog,
@@ -18,12 +19,14 @@ describe('USDA catalog search', () => {
     expect(results[0]?.provenance.kind).toBe('usda');
   });
 
-  it('finds generic chicken breast with a plate-sized serving', () => {
-    const results = searchUsdaRecords(records, 'chicken breast', 8);
-    expect(results.some((item) => /chicken breast/i.test(item.name))).toBe(true);
-    const breast = results.find((item) => /skin not eaten/i.test(item.name)) ?? results[0];
-    expect(breast?.serving.quantity).toBeGreaterThan(80);
-    expect(breast?.nutritionPerServing.proteinG).toBeGreaterThan(20);
+  it('finds eggs and only meatless foods for a chicken query', () => {
+    const results = searchUsdaRecords(records, 'egg', 8);
+    expect(results.some((item) => /\begg\b/i.test(item.name))).toBe(true);
+    expect(results.every((item) => isOvoLactoFood(item.name))).toBe(true);
+    const chicken = searchUsdaRecords(records, 'chicken breast', 8);
+    expect(chicken.every((item) => isOvoLactoFood(item.name))).toBe(true);
+    expect(chicken.every((item) => /\b(meatless|vegetarian|vegan|plant based)\b/i.test(item.name))).toBe(true);
+    expect(records.every((record) => isOvoLactoUsdaRecord(record))).toBe(true);
   });
 
   it('keeps pantry banana ahead of the USDA raw banana duplicate', () => {
@@ -33,8 +36,8 @@ describe('USDA catalog search', () => {
   });
 
   it('finds Chipotle menu items for the restaurants lane', () => {
-    const { menus } = searchLocalCatalog('barbacoa', { usda: records });
-    const item = menus.find((entry) => entry.brand === 'Chipotle' && /barbacoa/i.test(entry.name));
+    const { menus } = searchLocalCatalog('sofritas', { usda: records });
+    const item = menus.find((entry) => entry.brand === 'Chipotle' && /sofritas/i.test(entry.name));
     expect(item?.provenance.kind).toBe('restaurant-guide');
   });
 

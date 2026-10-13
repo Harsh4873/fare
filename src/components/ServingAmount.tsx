@@ -56,15 +56,24 @@ function arcPath(fromDeg: number, sweepDeg: number): string {
   return `M ${start.x} ${start.y} A ${RADIUS} ${RADIUS} 0 ${large} 1 ${end.x} ${end.y}`;
 }
 
-function valueFromAngle(clientX: number, clientY: number, rect: DOMRect, min: number, max: number): number {
-  const x = clientX - (rect.left + rect.width / 2);
-  const y = clientY - (rect.top + rect.height / 2);
+/** Local SVG coordinates, measured from the arc center rather than the element box. */
+export function servingValueFromLocal(x: number, y: number, min: number, max: number): number {
   let degrees = (Math.atan2(y, x) * 180) / Math.PI;
   let relative = degrees - START_DEG;
   while (relative < 0) relative += 360;
   while (relative >= 360) relative -= 360;
   const t = Math.min(1, Math.max(0, relative / SWEEP_DEG));
   return min + t * (max - min);
+}
+
+function valueFromPointer(svg: SVGSVGElement, clientX: number, clientY: number, min: number, max: number): number | undefined {
+  const matrix = svg.getScreenCTM();
+  if (!matrix) return undefined;
+  const point = svg.createSVGPoint();
+  point.x = clientX;
+  point.y = clientY;
+  const local = point.matrixTransform(matrix.inverse());
+  return servingValueFromLocal(local.x - CX, local.y - CY, min, max);
 }
 
 export interface ServingAmountProps {
@@ -98,7 +107,9 @@ export function ServingAmount({
   function setFromClient(clientX: number, clientY: number) {
     const node = svgRef.current;
     if (!node) return;
-    onChange(snapServing(valueFromAngle(clientX, clientY, node.getBoundingClientRect(), min, sliderMax), step, min, sliderMax));
+    const next = valueFromPointer(node, clientX, clientY, min, sliderMax);
+    if (next === undefined) return;
+    onChange(snapServing(next, step, min, sliderMax));
   }
 
   function onPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
@@ -114,36 +125,15 @@ export function ServingAmount({
 
   return (
     <div className="serving-amount">
-      <span className="field__label" id={labelId}>How much</span>
+      <span className="field__label">How much</span>
       <div className="serving-amount__dial">
         <svg
           ref={svgRef}
           className="serving-amount__ring"
           viewBox="0 0 220 200"
-          role="slider"
-          tabIndex={0}
-          aria-labelledby={labelId}
-          aria-valuemin={min}
-          aria-valuemax={sliderMax}
-          aria-valuenow={amount}
-          aria-valuetext={`${formatServingCount(amount)} ${servingNoun(amount)} of ${servingLabel}`}
+          aria-hidden="true"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
-              event.preventDefault();
-              onChange(snapServing(amount + step, step, min, sliderMax));
-            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
-              event.preventDefault();
-              onChange(snapServing(amount - step, step, min, sliderMax));
-            } else if (event.key === 'Home') {
-              event.preventDefault();
-              onChange(min);
-            } else if (event.key === 'End') {
-              event.preventDefault();
-              onChange(sliderMax);
-            }
-          }}
         >
           <path className="serving-amount__track" d={arcPath(START_DEG, SWEEP_DEG)} />
           <path className="serving-amount__fill" d={arcPath(START_DEG, Math.max(0.8, t * SWEEP_DEG))} />
@@ -160,7 +150,7 @@ export function ServingAmount({
         </div>
       </div>
       <label className="serving-amount__spectrum">
-        <span className="sr-only">Amount of {servingLabel}</span>
+        <span className="sr-only" id={labelId}>How much, amount of {servingLabel}</span>
         <input
           className="serving-amount__range"
           type="range"
@@ -168,6 +158,8 @@ export function ServingAmount({
           max={sliderMax}
           step={step}
           value={amount}
+          aria-labelledby={labelId}
+          aria-valuetext={`${formatServingCount(amount)} ${servingNoun(amount)} of ${servingLabel}`}
           onChange={(event) => onChange(snapServing(Number(event.target.value), step, min, sliderMax))}
         />
         <span className="serving-amount__ends">

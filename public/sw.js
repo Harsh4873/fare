@@ -1,5 +1,32 @@
 const CACHE_PREFIX = 'fare-shell-';
-const CACHE_NAME = `${CACHE_PREFIX}v1`;
+const CACHE_NAME = `${CACHE_PREFIX}v2`;
+
+function referencedAssetPaths(html, pageUrl) {
+  const keep = new Set();
+  const pattern = /(?:src|href)=["']([^"']+)["']/g;
+  for (const match of html.matchAll(pattern)) {
+    try {
+      const url = new URL(match[1], pageUrl);
+      if (url.origin === new URL(pageUrl).origin && url.pathname.includes('/assets/')) {
+        keep.add(url.pathname);
+      }
+    } catch {
+      // Skip a malformed URL in the shell.
+    }
+  }
+  return keep;
+}
+
+async function pruneHashedAssets(cache, html, pageUrl) {
+  const keep = referencedAssetPaths(html, pageUrl);
+  if (keep.size === 0) return;
+  const keys = await cache.keys();
+  await Promise.all(keys.map((request) => {
+    const path = new URL(request.url).pathname;
+    if (path.includes('/assets/') && !keep.has(path)) return cache.delete(request);
+    return undefined;
+  }));
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -28,9 +55,14 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        .then(async (response) => {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.put(request, response.clone());
+          try {
+            await pruneHashedAssets(cache, await response.clone().text(), response.url || request.url);
+          } catch {
+            // Keep the navigation response even when the shell cannot be parsed.
+          }
           return response;
         })
         .catch(async () => (await caches.match(request)) ?? caches.match(self.registration.scope)),

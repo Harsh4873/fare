@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Fare's compact USDA FNDDS catalog from the public survey JSON zip.
+"""Build Fare's compact ovo-lacto USDA FNDDS catalog from the public survey JSON zip.
 
 Source: USDA FoodData Central, FNDDS 2021-2023 (public domain).
   https://fdc.nal.usda.gov/download-datasets/
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -136,15 +137,16 @@ def main() -> None:
     records = [record for food in foods if (record := convert(food))]
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(records, separators=(",", ":"), ensure_ascii=True))
+    filter_script = Path(__file__).resolve().parent / "filter-usda-catalog.ts"
+    subprocess.run(["npx", "vite-node", str(filter_script), str(dest)], check=True)
+    records = json.loads(dest.read_text())
     banana = next(item for item in records if item["name"] == "Banana, raw")
-    chicken = next(
-        item
-        for item in records
-        if item["name"].startswith("Chicken breast") and "skin not eaten" in item["name"] and "originalName" in item
-    )
+    egg = next(item for item in records if item["name"].startswith("Egg") and "chicken" not in item["name"].lower())
+    if any("chicken breast" in item["name"].lower() for item in records):
+        raise SystemExit("ovo-lacto filter left a chicken breast record")
     print(f"wrote {len(records)} foods to {dest} ({dest.stat().st_size} bytes)")
     print("banana", banana)
-    print("chicken", chicken)
+    print("egg", egg)
 
 
 if __name__ == "__main__":

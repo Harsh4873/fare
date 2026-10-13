@@ -39,12 +39,12 @@ describe('FatSecret description parser', () => {
     });
   });
 
-  it('ranks name-prefix matches ahead of extra-word variants without promoting meat', () => {
+  it('drops meat dishes and keeps the vegetarian match', () => {
     const ranked = rankSlimFoods('panera mac and cheese', [
       { foodId: '2', name: 'Bacon Mac & Cheese - Bowl', brand: 'Panera Bread', foodType: 'Brand', calories: 1050 },
       { foodId: '1', name: 'Mac & Cheese - Cup', brand: 'Panera Bread', foodType: 'Brand', calories: 480 },
     ]);
-    expect(ranked[0]?.name).toMatch(/^Mac & Cheese/i);
+    expect(ranked.map((food) => food.name)).toEqual(['Mac & Cheese - Cup']);
   });
 });
 

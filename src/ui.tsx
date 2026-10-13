@@ -7,8 +7,9 @@ import {
   useId,
   useRef,
 } from 'react';
+import { createPortal } from 'react-dom';
 
-export type MacroTone = 'calories' | 'protein' | 'carbs' | 'fat';
+export type MacroTone = 'calories' | 'protein' | 'carbs' | 'fat' | 'fiber' | 'sodium';
 export type FeedbackTone = 'neutral' | 'positive' | 'warning' | 'danger';
 
 export function cx(...values: Array<string | false | null | undefined>): string {
@@ -182,6 +183,34 @@ function lockDocumentScroll() {
   documentLockCount += 1;
 }
 
+let pageInertCount = 0;
+
+function lockPageInert() {
+  pageInertCount += 1;
+  document.getElementById('root')?.setAttribute('inert', '');
+}
+
+function unlockPageInert() {
+  pageInertCount = Math.max(0, pageInertCount - 1);
+  if (pageInertCount === 0) document.getElementById('root')?.removeAttribute('inert');
+}
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function focusableElements(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter((node) => {
+    if (node.getAttribute('aria-hidden') === 'true') return false;
+    return node.tabIndex >= 0;
+  });
+}
+
 function unlockDocumentScroll() {
   documentLockCount = Math.max(0, documentLockCount - 1);
   if (documentLockCount !== 0) return;
@@ -213,6 +242,8 @@ export function Modal({
   const titleId = useId();
   const descriptionId = useId();
   const onCloseRef = useRef(onClose);
+  const dialogRef = useRef<HTMLElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
   onCloseRef.current = onClose;
 
   useEffect(() => {
@@ -220,8 +251,36 @@ export function Modal({
 
     openModalIds.push(modalId);
     lockDocumentScroll();
+    lockPageInert();
+    previouslyFocused.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    dialog?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && openModalIds.at(-1) === modalId) onCloseRef.current();
+      const top = openModalIds.at(-1) === modalId;
+      if (!top) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== 'Tab' || !dialog) return;
+      const nodes = focusableElements(dialog);
+      if (nodes.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof Node && dialog.contains(active);
+      if (event.shiftKey && (!inside || active === first || active === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (!inside || active === last)) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     window.addEventListener('keydown', onKeyDown);
@@ -229,20 +288,25 @@ export function Modal({
       const stackIndex = openModalIds.lastIndexOf(modalId);
       if (stackIndex >= 0) openModalIds.splice(stackIndex, 1);
       unlockDocumentScroll();
+      unlockPageInert();
       window.removeEventListener('keydown', onKeyDown);
+      const previous = previouslyFocused.current;
+      if (previous && document.contains(previous)) previous.focus();
     };
   }, [modalId, open]);
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className={cx('modal-backdrop', variant === 'sheet' && 'modal-backdrop--sheet')}
-      onMouseDown={(event) => {
+      onClick={(event) => {
         if (event.currentTarget === event.target) onClose();
       }}
     >
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         className={cx('modal-shell', `modal-shell--${variant}`, `modal-shell--${width}`, className)}
         role="dialog"
         aria-modal="true"
@@ -264,7 +328,8 @@ export function Modal({
         <div className="modal-shell__body">{children}</div>
         {footer ? <footer className="modal-shell__footer">{footer}</footer> : null}
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -281,6 +346,8 @@ export interface MacroBarProps extends Omit<HTMLAttributes<HTMLDivElement>, 'tit
   tone: MacroTone;
   valueLabel?: ReactNode;
   compact?: boolean;
+  /** When false, the row shows intake only and hides the goal track. */
+  showTrack?: boolean;
 }
 
 export function MacroBar({
@@ -290,6 +357,7 @@ export function MacroBar({
   tone,
   valueLabel,
   compact = false,
+  showTrack = true,
   className,
   ...props
 }: MacroBarProps) {
@@ -302,16 +370,18 @@ export function MacroBar({
         <span className="macro-bar__label">{label}</span>
         <span className="macro-bar__value">{valueLabel ?? `${Math.round(value)} / ${Math.round(target)}`}</span>
       </div>
-      <div
-        className="macro-bar__track"
-        role="progressbar"
-        aria-label={typeof label === 'string' ? label : undefined}
-        aria-valuemin={0}
-        aria-valuemax={Math.max(0, target)}
-        aria-valuenow={Math.max(0, value)}
-      >
-        <span className="macro-bar__fill" style={progressStyle} />
-      </div>
+      {showTrack ? (
+        <div
+          className="macro-bar__track"
+          role="progressbar"
+          aria-label={typeof label === 'string' ? label : undefined}
+          aria-valuemin={0}
+          aria-valuemax={Math.max(0, target)}
+          aria-valuenow={Math.max(0, value)}
+        >
+          <span className="macro-bar__fill" style={progressStyle} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -324,6 +394,9 @@ export interface CircularProgressProps extends Omit<HTMLAttributes<HTMLDivElemen
   tone?: MacroTone;
   size?: number;
   strokeWidth?: number;
+  over?: boolean;
+  accessibleName?: string;
+  valueText?: string;
 }
 
 export function CircularProgress({
@@ -334,6 +407,9 @@ export function CircularProgress({
   tone = 'calories',
   size = 152,
   strokeWidth = 11,
+  over = false,
+  accessibleName,
+  valueText,
   className,
   ...props
 }: CircularProgressProps) {
@@ -345,10 +421,11 @@ export function CircularProgress({
 
   return (
     <div
-      className={cx('circular-progress', `circular-progress--${tone}`, className)}
+      className={cx('circular-progress', `circular-progress--${tone}`, over && 'circular-progress--over', className)}
       style={{ width: size, height: size }}
       role="progressbar"
-      aria-label={typeof label === 'string' ? label : undefined}
+      aria-label={accessibleName ?? (typeof label === 'string' ? label : undefined)}
+      aria-valuetext={valueText}
       aria-valuemin={0}
       aria-valuemax={safeMax}
       aria-valuenow={Math.max(0, value)}

@@ -46,7 +46,7 @@ describe('breakdown catalog integrity', () => {
       ['cava', 'chipotle', 'indian', 'salata', 'subway'],
     );
     for (const restaurant of RESTAURANTS) {
-      expect(restaurant.items.length).toBeGreaterThanOrEqual(25);
+      expect(restaurant.items.length, restaurant.id).toBeGreaterThanOrEqual(22);
       expect(restaurant.categories.length).toBeGreaterThanOrEqual(4);
       expect(restaurant.nutritionUrl).toMatch(/^https:\/\//);
       expect(restaurant.lastVerified).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -65,7 +65,7 @@ describe('breakdown catalog integrity', () => {
         expect(item.id.startsWith(`${restaurant.id}-`), `${item.id} slug prefix`).toBe(true);
         expect(restaurant.categories, `${item.id} category ${item.category}`).toContain(item.category);
         if (restaurant.id === 'indian') {
-          // The generic Indian menu is estimates of typical dishes — it must
+          // The generic Indian menu is estimates of typical dishes. It must
           // never masquerade as official restaurant data.
           expect(item.sourceType).toBe('usda-generic');
           expect(item.confidence).toBe('medium');
@@ -125,7 +125,7 @@ describe('breakdown catalog integrity', () => {
     expect(names('subway').some((name) => name.includes('chipotle southwest'))).toBe(true);
     expect(names('chipotle').some((name) => name.includes('guacamole'))).toBe(true);
     expect(names('cava').some((name) => name.includes('hummus'))).toBe(true);
-    expect(names('indian').some((name) => name.includes('butter chicken'))).toBe(true);
+    expect(names('indian').some((name) => name.includes('paneer tikka'))).toBe(true);
     expect(names('indian').some((name) => name.includes('samosa'))).toBe(true);
     expect(names('indian').some((name) => name.includes('garlic naan'))).toBe(true);
     expect(names('indian').some((name) => name.includes('dal'))).toBe(true);

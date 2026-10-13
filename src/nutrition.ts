@@ -144,16 +144,20 @@ export interface TargetProgress {
   readonly consumed: number;
   readonly target: number;
   readonly remaining: number;
+  /** Amount past the target. Zero when the target is unset or intake is at or under it. */
+  readonly over: number;
   readonly ratio: number;
 }
 
 function progress(consumed: number, target: number): TargetProgress {
   const safeConsumed = safeNumber(consumed);
   const safeTarget = safeNumber(target);
+  const gap = safeTarget - safeConsumed;
   return {
     consumed: safeConsumed,
     target: safeTarget,
-    remaining: Math.max(0, safeTarget - safeConsumed),
+    remaining: safeTarget > 0 ? Math.max(0, gap) : 0,
+    over: safeTarget > 0 ? Math.max(0, -gap) : 0,
     ratio: safeTarget > 0 ? safeConsumed / safeTarget : 0,
   };
 }
@@ -179,4 +183,21 @@ export function progressAgainstTargets(
     fiberG: progress(nutrition.fiberG, targets.fiberG),
     sodiumMg: progress(nutrition.sodiumMg, targets.sodiumMg),
   };
+}
+
+/**
+ * Recent calendar days, plus any older day that actually has a log.
+ * Future dates stay out of History. Empty days inside the recent window stay visible.
+ */
+export function visibleHistoryDateKeys(
+  entries: readonly FoodEntry[],
+  today: DateKey,
+  recentDays = 21,
+): DateKey[] {
+  const span = Math.max(1, Math.floor(recentDays));
+  const keys = new Set(dateRange(addDays(today, -(span - 1)), today));
+  for (const entry of entries) {
+    if (!entry.deleted && entry.dateKey <= today) keys.add(entry.dateKey);
+  }
+  return [...keys].sort((left, right) => (left < right ? 1 : left > right ? -1 : 0));
 }

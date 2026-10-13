@@ -62,11 +62,6 @@ export const GENERIC_FOODS: readonly BreakdownFood[] = [
   item({ id: 'generic-potato', name: 'Potato (boiled)', category: 'Grains', servingLabel: '1 medium', servingGrams: 173, nutrition: { calories: 160, proteinG: 4, carbsG: 37, fatG: 0, saturatedFatG: 0, fiberG: 4, sugarG: 2, sodiumMg: 10 }, tags: ['vegetable', 'vegan', 'vegetarian'], aliases: ['aloo', 'potatoes'] }),
   item({ id: 'generic-sweet-potato', name: 'Sweet Potato (baked)', category: 'Grains', servingLabel: '1 medium', servingGrams: 130, nutrition: { calories: 110, proteinG: 2, carbsG: 26, fatG: 0, saturatedFatG: 0, fiberG: 4, sugarG: 8, sodiumMg: 40 }, tags: ['vegetable', 'vegan', 'vegetarian'] }),
   // Proteins
-  item({ id: 'generic-chicken-breast', name: 'Chicken Breast (cooked)', category: 'Proteins', servingLabel: '100 g cooked', servingGrams: 100, nutrition: { calories: 165, proteinG: 31, carbsG: 0, fatG: 3.5, saturatedFatG: 1, fiberG: 0, sugarG: 0, sodiumMg: 75 }, tags: ['protein-main'], aliases: ['grilled chicken', 'chicken'], portionOptions: SCALABLE }),
-  item({ id: 'generic-chicken-thigh', name: 'Chicken Thigh (cooked)', category: 'Proteins', servingLabel: '100 g cooked', servingGrams: 100, nutrition: { calories: 210, proteinG: 26, carbsG: 0, fatG: 11, saturatedFatG: 3, fiberG: 0, sugarG: 0, sodiumMg: 90 }, tags: ['protein-main'], portionOptions: SCALABLE }),
-  item({ id: 'generic-ground-beef', name: 'Ground Beef 85/15 (cooked)', category: 'Proteins', servingLabel: '100 g cooked', servingGrams: 100, nutrition: { calories: 250, proteinG: 26, carbsG: 0, fatG: 15, saturatedFatG: 6, fiberG: 0, sugarG: 0, sodiumMg: 80 }, tags: ['protein-main'], aliases: ['beef', 'minced beef'], portionOptions: SCALABLE }),
-  item({ id: 'generic-salmon', name: 'Salmon (cooked)', category: 'Proteins', servingLabel: '100 g cooked', servingGrams: 100, nutrition: { calories: 208, proteinG: 20, carbsG: 0, fatG: 13, saturatedFatG: 3, fiberG: 0, sugarG: 0, sodiumMg: 60 }, tags: ['protein-main'], portionOptions: SCALABLE }),
-  item({ id: 'generic-shrimp', name: 'Shrimp (cooked)', category: 'Proteins', servingLabel: '100 g cooked', servingGrams: 100, nutrition: { calories: 100, proteinG: 24, carbsG: 0, fatG: 0.5, saturatedFatG: 0, fiberG: 0, sugarG: 0, sodiumMg: 110 }, tags: ['protein-main'], aliases: ['prawns'], portionOptions: SCALABLE }),
   item({ id: 'generic-egg', name: 'Egg', category: 'Proteins', servingLabel: '1 large', servingGrams: 50, nutrition: { calories: 70, proteinG: 6, carbsG: 0.5, fatG: 5, saturatedFatG: 1.5, fiberG: 0, sugarG: 0, sodiumMg: 70 }, tags: ['protein-main', 'vegetarian'], aliases: ['eggs'] }),
   item({ id: 'generic-tofu', name: 'Tofu (firm)', category: 'Proteins', servingLabel: '100 g', servingGrams: 100, nutrition: { calories: 145, proteinG: 16, carbsG: 3, fatG: 9, saturatedFatG: 1.5, fiberG: 2, sugarG: 0, sodiumMg: 10 }, tags: ['protein-main', 'vegan', 'vegetarian'], portionOptions: SCALABLE }),
   item({ id: 'generic-tempeh', name: 'Tempeh', category: 'Proteins', servingLabel: '100 g', servingGrams: 100, nutrition: { calories: 195, proteinG: 20, carbsG: 8, fatG: 11, saturatedFatG: 2.5, fiberG: 5, sugarG: 0, sodiumMg: 10 }, tags: ['protein-main', 'vegan', 'vegetarian'], portionOptions: SCALABLE }),
@@ -214,7 +209,7 @@ export const DISH_TEMPLATES: readonly DishTemplate[] = [
   {
     id: 'template-paneer-tikka-masala',
     name: 'Paneer Tikka Masala',
-    description: 'A likely-ingredient estimate: paneer simmered in a creamy tomato gravy. Actual restaurant versions vary widely in cream and oil.',
+    description: 'A likely-ingredient estimate: paneer simmered in a creamy tomato sauce. Actual restaurant versions vary widely in cream and oil.',
     components: [
       { foodId: 'generic-paneer', quantity: 1.5 },
       { foodId: 'generic-tomato-sauce', quantity: 1 },
@@ -222,38 +217,12 @@ export const DISH_TEMPLATES: readonly DishTemplate[] = [
       { foodId: 'generic-butter', quantity: 1 },
       { foodId: 'generic-onion', quantity: 1 },
     ],
-    aliases: ['paneer tikka masala', 'paneer makhani', 'paneer curry'],
-  },
-  {
-    id: 'template-butter-chicken',
-    name: 'Butter Chicken',
-    description: 'A likely-ingredient estimate: chicken thigh in a buttery tomato-cream sauce.',
-    components: [
-      { foodId: 'generic-chicken-thigh', quantity: 1.5 },
-      { foodId: 'generic-tomato-sauce', quantity: 1 },
-      { foodId: 'generic-heavy-cream', quantity: 1 },
-      { foodId: 'generic-butter', quantity: 1.5 },
-      { foodId: 'generic-sugar', quantity: 1 },
-    ],
-    aliases: ['murgh makhani', 'chicken makhani'],
-  },
-  {
-    id: 'template-chicken-tikka-masala',
-    name: 'Chicken Tikka Masala',
-    description: 'A likely-ingredient estimate: grilled chicken breast in spiced tomato-cream gravy.',
-    components: [
-      { foodId: 'generic-chicken-breast', quantity: 1.5 },
-      { foodId: 'generic-tomato-sauce', quantity: 1 },
-      { foodId: 'generic-heavy-cream', quantity: 1 },
-      { foodId: 'generic-butter', quantity: 1 },
-      { foodId: 'generic-onion', quantity: 0.5 },
-    ],
-    aliases: ['tikka masala'],
+    aliases: ['paneer tikka masala', 'paneer makhani', 'paneer curry', 'tikka masala'],
   },
   {
     id: 'template-chana-masala',
     name: 'Chana Masala',
-    description: 'A likely-ingredient estimate: chickpeas in a spiced onion-tomato gravy.',
+    description: 'A likely-ingredient estimate: chickpeas in a spiced onion-tomato sauce.',
     components: [
       { foodId: 'generic-chickpeas', quantity: 1 },
       { foodId: 'generic-tomato-sauce', quantity: 1 },
@@ -277,7 +246,7 @@ export const DISH_TEMPLATES: readonly DishTemplate[] = [
   {
     id: 'template-palak-paneer',
     name: 'Palak Paneer',
-    description: 'A likely-ingredient estimate: paneer in a creamed spinach gravy.',
+    description: 'A likely-ingredient estimate: paneer in a creamed spinach sauce.',
     components: [
       { foodId: 'generic-paneer', quantity: 1 },
       { foodId: 'generic-spinach', quantity: 3 },
@@ -324,17 +293,16 @@ export const DISH_TEMPLATES: readonly DishTemplate[] = [
     aliases: ['tofu stir fry', 'veggie stir fry'],
   },
   {
-    id: 'template-chicken-burrito-bowl',
-    name: 'Chicken Burrito Bowl',
-    description: 'A likely-ingredient estimate for a homemade burrito bowl with rice, beans, chicken, and toppings.',
+    id: 'template-bean-burrito-bowl',
+    name: 'Bean and Cheese Burrito Bowl',
+    description: 'A likely-ingredient estimate for a homemade burrito bowl with rice, beans, cheese, and toppings.',
     components: [
       { foodId: 'generic-white-rice', quantity: 1 },
       { foodId: 'generic-black-beans', quantity: 0.5 },
-      { foodId: 'generic-chicken-breast', quantity: 1 },
       { foodId: 'generic-salsa', quantity: 2 },
       { foodId: 'generic-guacamole', quantity: 1 },
       { foodId: 'generic-cheddar', quantity: 1 },
     ],
-    aliases: ['burrito bowl', 'rice bowl'],
+    aliases: ['burrito bowl', 'rice bowl', 'veggie burrito bowl'],
   },
 ];

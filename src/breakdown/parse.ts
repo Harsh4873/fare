@@ -44,7 +44,7 @@ const FILLER_WORDS = new Set(['of', 'the', 'my', 'some', 'please', 'order']);
 
 /**
  * Size and weight descriptors: a bare number followed by one of these is a
- * measurement ("6 inch turkey", "4 oz chicken"), not a serving count.
+ * measurement ("6 inch paneer", "4 oz tofu"), not a serving count.
  */
 const UNIT_WORDS = new Set([
   'inch', 'inches', 'in', 'cm', 'mm',
@@ -179,7 +179,7 @@ function extractQuantity(segment: string): ParsedItem | undefined {
     if (bareNumber) {
       const nextToken = normalizeText(remainder).split(' ')[0];
       if (nextToken && UNIT_WORDS.has(nextToken)) {
-        // "6 inch turkey" is a size, not six servings: drop the measurement
+        // "6 inch paneer" is a size, not six servings: drop the measurement
         // and keep a single serving.
         text = remainder.slice(remainder.toLowerCase().indexOf(nextToken) + nextToken.length).trim() || remainder;
         break;

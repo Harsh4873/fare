@@ -17,6 +17,8 @@ interface BarcodeScannerProps {
 export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls>();
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
   const [mode, setMode] = useState<'camera' | 'manual'>('camera');
   const [manual, setManual] = useState('');
   const [status, setStatus] = useState<'starting' | 'ready' | 'error'>('starting');
@@ -41,7 +43,7 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
               const barcode = normalizeBarcode(result.getText());
               if (!barcode) return;
               scannerControls.stop();
-              onScan(barcode);
+              onScanRef.current(barcode);
               return;
             }
             if (error && !String(error.name).includes('NotFound')) {
@@ -74,7 +76,7 @@ export function BarcodeScanner({ open, onClose, onScan }: BarcodeScannerProps) {
       const stream = videoRef.current?.srcObject;
       if (stream instanceof MediaStream) stream.getTracks().forEach((track) => track.stop());
     };
-  }, [mode, onScan, open]);
+  }, [mode, open]);
 
   useEffect(() => {
     if (!open) {

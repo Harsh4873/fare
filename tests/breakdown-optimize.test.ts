@@ -126,7 +126,7 @@ describe('optimizeMeal', () => {
     if (!ranch) throw new Error('fixture missing ranch');
     const pool: BreakdownFood[] = [
       food('f-lemon', 'Lemon Vinaigrette', { calories: 60, fatG: 6 }, { category: 'Dressings', restaurantId: 'salata', tags: ['dressing', 'vegan', 'vegetarian'] }),
-      food('f-caesar', 'Caesar', { calories: 150, fatG: 15 }, { category: 'Dressings', restaurantId: 'salata', tags: ['dressing', 'vegetarian'] }),
+      food('f-blue-cheese', 'Blue Cheese', { calories: 150, fatG: 15 }, { category: 'Dressings', restaurantId: 'salata', tags: ['dressing', 'vegetarian'] }),
       food('f-other-restaurant', 'Other Ranch', { calories: 10 }, { category: 'Dressings', restaurantId: 'cava', tags: ['dressing', 'vegan'] }),
       food('f-wrong-shelf', 'Falafel Light', { calories: 90 }, { category: 'Proteins', restaurantId: 'salata', tags: ['vegan'] }),
     ];

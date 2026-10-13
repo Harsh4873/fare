@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { moveEntries, restoreEntry } from '../src/entry-actions';
+import { moveEntries, repeatConsumption, restoreEntry } from '../src/entry-actions';
 import { createStarterState, createNutritionSnapshot, type FoodEntry } from '../src/model';
 import { mergeStates } from '../src/sync-core';
 import { parseFareState } from '../src/store';
@@ -15,6 +15,14 @@ function entry(id: string): FoodEntry {
 }
 
 describe('diary moves and undo', () => {
+  it('stamps log again at the current minute instead of the source meal', () => {
+    const now = new Date('2026-07-12T15:04:00.000Z');
+    expect(repeatConsumption(now)).toEqual({
+      consumedAt: '2026-07-12T15:04:00.000Z',
+      consumedMinute: now.getHours() * 60 + now.getMinutes(),
+    });
+  });
+
   it('moves a whole meal while preserving identity, portions, notes, timestamps and daily totals', () => {
     const original = [entry('a'), entry('b')];
     const moved = moveEntries(original, ['a', 'b'], 'dinner', later);

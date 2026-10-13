@@ -1,5 +1,6 @@
 import { allFoods, restaurantById } from '../breakdown/data';
 import type { BreakdownFood } from '../breakdown/types';
+import { isOvoLactoFood, isOvoLactoUsdaRecord } from '../diet';
 import type { Nutrition, NutritionDataQuality, NutritionProvenance } from '../model';
 import type { CatalogFood, UsdaFoodRecord } from './types';
 
@@ -11,7 +12,7 @@ let usdaLoad: Promise<readonly UsdaFoodRecord[]> | undefined;
 export async function loadUsdaCatalog(): Promise<readonly UsdaFoodRecord[]> {
   if (usdaRecords) return usdaRecords;
   usdaLoad ??= import('./usda-foods.json').then((module) => {
-    usdaRecords = module.default as UsdaFoodRecord[];
+    usdaRecords = (module.default as UsdaFoodRecord[]).filter((record) => isOvoLactoUsdaRecord(record));
     return usdaRecords;
   });
   return usdaLoad;
@@ -87,7 +88,12 @@ function nutritionFromRecord(record: UsdaFoodRecord): Nutrition {
   };
 }
 
+function visibleCategory(category: string): string | undefined {
+  return isOvoLactoFood(category) ? category : undefined;
+}
+
 export function usdaRecordToCatalog(record: UsdaFoodRecord): CatalogFood {
+  const category = visibleCategory(record.category);
   return {
     id: `usda:${record.id}`,
     name: record.name,
@@ -108,9 +114,9 @@ export function usdaRecordToCatalog(record: UsdaFoodRecord): CatalogFood {
         'USDA survey food for a typical portion, not a package label. Slide the amount to match what you ate.',
       ],
     },
-    categories: [record.category],
+    categories: category ? [category] : [],
     aliases: record.originalName && record.originalName !== record.name ? [record.originalName] : [],
-    detail: record.category,
+    detail: category,
   };
 }
 
@@ -154,7 +160,11 @@ export function searchUsdaRecords(
   limit = 12,
 ): CatalogFood[] {
   const scored = records.flatMap((record) => {
-    const aliases = record.originalName ? [record.originalName, record.category] : [record.category];
+    if (!isOvoLactoUsdaRecord(record)) return [];
+    const aliases = [
+      ...(record.originalName ? [record.originalName] : []),
+      ...(isOvoLactoFood(record.category) ? [record.category] : []),
+    ];
     let score = fieldScore(record.name, '', aliases, query);
     if (score === undefined) return [];
     const original = record.originalName ?? '';
@@ -172,6 +182,7 @@ export function searchUsdaRecords(
 
 export function searchMenuFoods(query: string, limit = 8): CatalogFood[] {
   const scored = allFoods().flatMap((food) => {
+    if (!isOvoLactoFood([food.name, ...(food.aliases ?? [])].join(' '))) return [];
     const restaurant = restaurantById(food.restaurantId);
     const score = fieldScore(food.name, restaurant?.name ?? '', food.aliases ?? [], query);
     if (score === undefined) return [];

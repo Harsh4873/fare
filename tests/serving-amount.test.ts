@@ -3,6 +3,7 @@ import {
   clampServing,
   formatServingCount,
   servingNoun,
+  servingValueFromLocal,
   snapServing,
 } from '../src/components/ServingAmount';
 
@@ -14,6 +15,18 @@ describe('serving amount formatting', () => {
     expect(formatServingCount(2.25)).toBe('2¼');
     expect(servingNoun(1)).toBe('serving');
     expect(servingNoun(1.5)).toBe('servings');
+  });
+
+  it('reads the dial from the arc center, including the far end of the sweep', () => {
+    const at = (degrees: number) => servingValueFromLocal(
+      Math.cos((degrees * Math.PI) / 180),
+      Math.sin((degrees * Math.PI) / 180),
+      0.25,
+      6,
+    );
+    expect(at(135)).toBeCloseTo(0.25);
+    expect(at(135 + 135)).toBeCloseTo(0.25 + (6 - 0.25) / 2);
+    expect(at(135 + 270)).toBeCloseTo(6);
   });
 
   it('snaps the slider onto a small step without dropping below the floor', () => {

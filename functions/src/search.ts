@@ -1,3 +1,4 @@
+import { isOvoLactoFood } from './diet.js';
 import { signOAuth1Get, signedQueryString } from './oauth1.js';
 
 export const FATSECRET_API_URL = 'https://platform.fatsecret.com/rest/server.api';
@@ -126,7 +127,8 @@ function scoreFood(query: string, food: SlimFatSecretFood): number {
 }
 
 export function rankSlimFoods(query: string, foods: readonly SlimFatSecretFood[]): SlimFatSecretFood[] {
-  return [...foods].sort((left, right) => {
+  const allowed = foods.filter((food) => isOvoLactoFood(food.name) && isOvoLactoFood(food.brand ?? ''));
+  return [...allowed].sort((left, right) => {
     const delta = scoreFood(query, right) - scoreFood(query, left);
     return delta !== 0 ? delta : left.name.localeCompare(right.name);
   });
@@ -160,6 +162,7 @@ export async function searchFatSecretFoods(options: SearchFoodsOptions): Promise
   const query = normalizeQuery(options.query);
   if (query.length < 2) throw new RangeError('Enter at least two characters before searching');
   const limit = Math.max(1, Math.min(20, Math.floor(options.limit ?? 12)));
+  const fetchLimit = Math.min(50, Math.max(limit, limit * 3));
   const now = options.now ?? Date.now;
   const current = now();
   const cacheKey = `${query.toLocaleLowerCase()}|${limit}`;
@@ -173,7 +176,7 @@ export async function searchFatSecretFoods(options: SearchFoodsOptions): Promise
       method: 'foods.search',
       search_expression: query,
       format: 'json',
-      max_results: String(limit),
+      max_results: String(fetchLimit),
     },
     consumerKey: options.credentials.consumerKey,
     consumerSecret: options.credentials.sharedSecret,

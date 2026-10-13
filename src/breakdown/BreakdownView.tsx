@@ -283,7 +283,7 @@ export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
           size="large"
           eyebrow="Fare / Breakdown"
           title="Where do the numbers come from?"
-          description="Build a meal from official restaurant data, pantry staples, or plain words — then see exactly which components drive the calories, protein, and fiber."
+          description="Build a meal from official restaurant data, pantry staples, or plain words, then see exactly which components drive the calories, protein, and fiber."
         />
         <Panel variant="raised" padding="roomy">
           <SectionHeading title="Start from a restaurant" size="small" description="Chain menus use published nutrition guides; the Indian menu uses typical-dish estimates." />
@@ -383,7 +383,7 @@ export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
               <span className="fine-print">
                 {servesOfficialData(restaurant)
                   ? `Official ${restaurant.name} data, checked ${restaurant.lastVerified}`
-                  : `Typical ${restaurant.name} dish estimates — portions vary by kitchen`}
+                  : `Typical ${restaurant.name} dish estimates. Portions vary by kitchen.`}
               </span>
             )}
           </div>
@@ -404,7 +404,7 @@ export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
         )}
         {previousLog && (
           <p className="breakdown-hero__history">
-            Last time you logged “{previousLog.snapshot.name}” ({previousLog.dateKey}) it was {formatNumber(previousLog.snapshot.nutrition.calories)} kcal — this build is {formatNumber(Math.abs(analysis.totals.calories - previousLog.snapshot.nutrition.calories))} kcal {analysis.totals.calories >= previousLog.snapshot.nutrition.calories ? 'more' : 'less'}.
+            Last time you logged “{previousLog.snapshot.name}” ({previousLog.dateKey}) it was {formatNumber(previousLog.snapshot.nutrition.calories)} kcal. This build is {formatNumber(Math.abs(analysis.totals.calories - previousLog.snapshot.nutrition.calories))} kcal {analysis.totals.calories >= previousLog.snapshot.nutrition.calories ? 'more' : 'less'}.
           </p>
         )}
       </Panel>
@@ -514,7 +514,7 @@ export function BreakdownView({ state, store, onToast }: BreakdownViewProps) {
 
         <div className="page-stack breakdown-side">
           <Panel>
-            <SectionHeading title="What is costing you" size="small" description="Deterministic reads on this exact meal — no guesswork." />
+            <SectionHeading title="What is costing you" size="small" description="Deterministic reads on this exact meal." />
             {insights.length ? (
               <div className="insight-list">{insights.map((insight) => <InsightRow key={insight.id} insight={insight} />)}</div>
             ) : (

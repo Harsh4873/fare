@@ -3,6 +3,7 @@ import {
   minuteOfDayFromIso,
   weekdayOf,
 } from './dates';
+import { isOvoLactoFood } from './diet';
 import type {
   DateKey,
   FareState,
@@ -160,6 +161,13 @@ export function rankUsuals(
   const suggestions: UsualSuggestion[] = [];
 
   for (const candidate of candidates) {
+    const parts = [candidate.name, candidate.brand ?? '', ...candidate.aliases];
+    if (candidate.meal) {
+      for (const item of candidate.meal.items) {
+        parts.push(item.snapshot.name, item.snapshot.brand ?? '');
+      }
+    }
+    if (parts.some((part) => part.trim().length > 0 && !isOvoLactoFood(part))) continue;
     const text = textScore(candidate, context.query ?? '');
     if (text === undefined) continue;
     const history = linkedEntries(state.entries, candidate, context.dateKey);

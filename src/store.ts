@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isDateKey, minuteOfDay } from './dates';
+import { isOvoLactoLabeledFood } from './diet';
 import {
   createId,
   createNutritionSnapshot,
@@ -20,7 +21,7 @@ import {
 } from './model';
 import { scaleNutrition } from './nutrition';
 import { createPersistenceQueue, type PersistenceStatus } from './persistence';
-import { moveEntries as moveEntryRecords, restoreEntry as restoreEntryRecord } from './entry-actions';
+import { moveEntries as moveEntryRecords, repeatConsumption, restoreEntry as restoreEntryRecord } from './entry-actions';
 import {
   mergeStates,
   stableStringify,
@@ -523,7 +524,7 @@ export function useFareStore(): FareStore {
 
   const addFood = useCallback((draft: NewFood) => {
     const current = stateRef.current;
-    if (!current) return undefined;
+    if (!current || !isOvoLactoLabeledFood(draft.name, draft.brand)) return undefined;
     const now = timestampAfterState(current);
     const food: Food = { ...draft, id: createId('food'), createdAt: now, updatedAt: now };
     commit({ ...current, foods: [...current.foods, food] }, { type: 'foods', foods: [food] });
@@ -536,6 +537,7 @@ export function useFareStore(): FareStore {
     const existing = current.foods.find((food) => food.id === id && !food.deleted);
     if (!existing) return;
     const nextFood: Food = { ...existing, ...patch, updatedAt: timestampAfterState(current) };
+    if (!isOvoLactoLabeledFood(nextFood.name, nextFood.brand)) return;
     commit({ ...current, foods: current.foods.map((food) => food.id === id ? nextFood : food) }, { type: 'foods', foods: [nextFood] });
   }, [commit]);
 
@@ -574,7 +576,7 @@ export function useFareStore(): FareStore {
 
   const addEntry = useCallback((draft: NewEntry) => {
     const current = stateRef.current;
-    if (!current) return undefined;
+    if (!current || !isOvoLactoLabeledFood(draft.snapshot.name, draft.snapshot.brand)) return undefined;
     const now = timestampAfterState(current);
     const entry: FoodEntry = { ...draft, id: createId('entry'), createdAt: now, updatedAt: now };
     commit({ ...current, entries: [...current.entries, entry] }, { type: 'entries', entries: [entry] });
@@ -632,6 +634,7 @@ export function useFareStore(): FareStore {
   const logMeal = useCallback((meal: SavedMeal, options: LogMealOptions) => {
     const current = stateRef.current;
     if (!current || meal.deleted) return [];
+    if (meal.items.some((item) => !isOvoLactoLabeledFood(item.snapshot.name, item.snapshot.brand))) return [];
     const now = timestampAfterState(current);
     const consumedAt = options.consumedAt ?? new Date().toISOString();
     const entries = meal.items.map((item): FoodEntry => ({
@@ -656,13 +659,21 @@ export function useFareStore(): FareStore {
     const source = current?.entries.find((entry) => entry.id === id && !entry.deleted);
     if (!source) return undefined;
     const { id: _id, createdAt: _created, updatedAt: _updated, deleted: _deleted, deletedAt: _deletedAt, ...draft } = source;
-    return addEntry({ ...draft, dateKey, mealSlot: mealSlot ?? source.mealSlot, consumedAt: new Date().toISOString() });
+    const repeated = repeatConsumption(new Date());
+    return addEntry({
+      ...draft,
+      dateKey,
+      mealSlot: mealSlot ?? source.mealSlot,
+      consumedAt: repeated.consumedAt,
+      consumedMinute: repeated.consumedMinute,
+    });
   }, [addEntry]);
 
   const copyDay = useCallback((fromDateKey: string, toDateKey: string, mealSlot?: MealSlot) => {
     const current = stateRef.current;
     if (!current) return [];
-    const source = entriesForCopy(current.entries, fromDateKey, mealSlot);
+    const source = entriesForCopy(current.entries, fromDateKey, mealSlot)
+      .filter((entry) => isOvoLactoLabeledFood(entry.snapshot.name, entry.snapshot.brand));
     const now = timestampAfterState(current);
     const consumedAt = new Date().toISOString();
     const entries = source.map((entry): FoodEntry => ({ ...entry, id: createId('entry'), dateKey: toDateKey, consumedAt, createdAt: now, updatedAt: now }));

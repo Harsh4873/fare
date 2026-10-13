@@ -467,7 +467,7 @@ export function SourceModal({ component, onClose, onSetQuantity }: SourceModalPr
 
 function describeConfidence(food: BreakdownFood): string {
   if (food.sourceType === 'restaurant-official') return 'Official nutrition information published by the restaurant.';
-  if (food.sourceType === 'usda-generic') return 'Nutrition source is reliable, but your portion size is estimated — adjust the quantity to match your plate.';
+  if (food.sourceType === 'usda-generic') return 'Nutrition source is reliable, but your portion size is estimated. Adjust the quantity to match your plate.';
   if (food.sourceType === 'reconstruction') return 'This dish was reconstructed from likely ingredients. Values may vary substantially depending on preparation and serving size.';
   return 'Estimated value. Treat it as a rough guide, not a measurement.';
 }
@@ -542,7 +542,7 @@ export function OptimizeModal({ open, onClose, components, restaurantId, onApply
       open={open}
       onClose={onClose}
       title="Optimize this meal"
-      description="Deterministic search over real menu options — your constraints always win."
+      description="Deterministic search over real menu options. Your constraints always win."
       width="large"
       footer={
         <>
@@ -739,7 +739,7 @@ export function CompareModal({ open, onClose, original, current }: CompareModalP
           {changes.length ? (
             <ul>{changes.map((change) => <li key={change}>{change}</li>)}</ul>
           ) : (
-            <p className="fine-print">No composition changes yet — edit the meal to see the difference here.</p>
+            <p className="fine-print">No composition changes yet. Edit the meal to see the difference here.</p>
           )}
         </div>
       </div>
@@ -772,7 +772,7 @@ export function SaveVariantModal({ open, onClose, defaultName, onSave }: SaveVar
       open={open}
       onClose={onClose}
       title="Save this version"
-      description="Variants live on this device for quick reuse — they are not diary entries."
+      description="Variants live on this device for quick reuse. They are not diary entries."
       width="small"
       footer={
         <>

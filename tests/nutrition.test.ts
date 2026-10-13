@@ -6,6 +6,7 @@ import {
   scaleNutrition,
   summarizeDay,
   summarizeWeek,
+  visibleHistoryDateKeys,
 } from '../src/nutrition';
 import type { FoodEntry, Nutrition } from '../src/model';
 
@@ -97,6 +98,20 @@ describe('nutrition math', () => {
     expect(summary.dailyAverage.calories).toBeCloseTo(320 / 2);
   });
 
+  it('keeps the recent history window and older logged days', () => {
+    const keys = visibleHistoryDateKeys([
+      entry('old', '2026-01-02', 'lunch'),
+      entry('gone', '2026-02-02', 'lunch', base, true),
+      entry('future', '2026-08-01', 'lunch'),
+    ], '2026-07-12');
+    expect(keys[0]).toBe('2026-07-12');
+    expect(keys.at(-1)).toBe('2026-01-02');
+    expect(keys).toContain('2026-06-22');
+    expect(keys).not.toContain('2026-08-01');
+    expect(keys).not.toContain('2026-02-02');
+    expect(keys).toHaveLength(22);
+  });
+
   it('reports target progress and never returns negative remaining values', () => {
     const progress = progressAgainstTargets(base, {
       calories: 150,
@@ -109,6 +124,24 @@ describe('nutrition math', () => {
     });
     expect(progress.calories.ratio).toBeCloseTo(160 / 150);
     expect(progress.calories.remaining).toBe(0);
+    expect(progress.calories.over).toBe(10);
     expect(progress.proteinG.remaining).toBe(30);
+    expect(progress.proteinG.over).toBe(0);
+  });
+
+  it('does not treat a cleared target as intake or as an overage', () => {
+    const progress = progressAgainstTargets(base, {
+      calories: 0,
+      proteinG: 0,
+      carbsG: 0,
+      fatG: 0,
+      fiberG: 0,
+      sodiumMg: 0,
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    });
+    expect(progress.calories.consumed).toBe(160);
+    expect(progress.calories.remaining).toBe(0);
+    expect(progress.calories.over).toBe(0);
+    expect(progress.calories.ratio).toBe(0);
   });
 });

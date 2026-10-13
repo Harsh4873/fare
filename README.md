@@ -15,7 +15,7 @@ Targets are always user-entered. Fare does not prescribe calorie deficits, macro
 
 ## Restaurant menus
 
-Add food includes a Restaurants lane for curated menus (Salata, CAVA, Chipotle, Subway — values transcribed from each chain's published nutrition guide — plus a generic Indian menu of common dishes with typical-portion estimates that names no specific restaurant) and USDA-derived pantry staples. Search also matches those items as you type. Restaurant values are point-in-time transcriptions — each item records `lastVerified`. Logging stores an immutable snapshot, so later catalog updates never rewrite an earlier day.
+Add food includes a Restaurants lane for curated menus (Salata, CAVA, Chipotle, Subway, with values transcribed from each chain's published nutrition guide, plus a generic Indian menu of common dishes with typical-portion estimates that names no specific restaurant) and USDA-derived pantry staples. Search also matches those items as you type. Restaurant values are point-in-time transcriptions, and each item records `lastVerified`. Logging stores an immutable snapshot, so later catalog updates never rewrite an earlier day.
 
 The catalog lives in `src/breakdown/data/`.
 
@@ -23,7 +23,7 @@ The catalog lives in `src/breakdown/data/`.
 
 Fare searches personal history, USDA survey foods, and curated restaurant/pantry items as you type. Brand catalog (FatSecret) and packaged-product (Open Food Facts) search happen only after an explicit submit. Neither API is queried on each keystroke. Barcode reads use the current Open Food Facts product endpoint. Every imported result keeps its source, serving basis, fetch time, and a data-quality note so it can be reviewed before logging.
 
-- USDA FoodData Central FNDDS 2021–2023 is bundled locally (public domain), including pantry plates for restaurant-style cheese pizza and macaroni and cheese. Those are survey portions, not Domino's, Panera, or Costco. The browser never calls the USDA API: <https://fdc.nal.usda.gov/download-datasets/>
+- USDA FoodData Central FNDDS 2021–2023 is bundled locally (public domain) as an ovo-lacto slice: eggs and dairy stay, and meat, poultry, fish, shellfish, and gelatin are omitted. Pantry plates for restaurant-style cheese pizza and macaroni and cheese are included. Those are survey portions, not a named chain. The browser never calls the USDA API: <https://fdc.nal.usda.gov/download-datasets/>
 - FatSecret branded foods (`foods.search`) go through a server proxy so the OAuth 1.0 consumer key and shared secret never ship in GitHub Pages JavaScript. Do not use OAuth 2.0 on this account.
 - Open Food Facts API: <https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/>
 - Open Food Facts database licensing/attribution: <https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/tutorials/license-be-on-the-legal-side/>

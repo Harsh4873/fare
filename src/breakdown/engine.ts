@@ -156,7 +156,7 @@ export function buildInsights(analysis: MealAnalysis): readonly Insight[] {
     insights.push({
       id: 'top-driver',
       title: 'Biggest calorie driver',
-      body: `${top.component.food.name}${quantitySuffix} contributes ${Math.round(top.nutrition.calories)} kcal — about ${percent(top.share.calories)}% of this meal.`,
+      body: `${top.component.food.name}${quantitySuffix} contributes ${Math.round(top.nutrition.calories)} kcal, about ${percent(top.share.calories)}% of this meal.`,
       tone: 'neutral',
     });
   }
@@ -182,7 +182,7 @@ export function buildInsights(analysis: MealAnalysis): readonly Insight[] {
     insights.push({
       id: 'sauce-heavy',
       title: 'Sauces are doing heavy lifting',
-      body: `Dressings and sauces add ${Math.round(sauceCalories)} kcal — about ${percent(sauceCalories / totals.calories)}% of the meal.`,
+      body: `Dressings and sauces add ${Math.round(sauceCalories)} kcal, about ${percent(sauceCalories / totals.calories)}% of the meal.`,
       tone: 'warning',
     });
   }
@@ -218,7 +218,7 @@ export function buildInsights(analysis: MealAnalysis): readonly Insight[] {
     insights.push({
       id: 'protein-workhorse',
       title: 'Protein workhorse',
-      body: `${workhorse.component.food.name} delivers ${workhorse.proteinEfficiency.toFixed(1)} g protein per 100 kcal — the best in this meal.`,
+      body: `${workhorse.component.food.name} delivers ${workhorse.proteinEfficiency.toFixed(1)} g protein per 100 kcal, the best in this meal.`,
       tone: 'positive',
     });
   }

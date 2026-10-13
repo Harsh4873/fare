@@ -6,6 +6,7 @@
  * dishes from likely ingredients and are always labelled low confidence.
  */
 
+import { isOvoLactoFood } from '../../diet';
 import { createId } from '../../model';
 import type {
   BreakdownFood,
@@ -15,12 +16,24 @@ import type {
 } from '../types';
 import { CAVA } from './cava';
 import { CHIPOTLE } from './chipotle';
-import { GENERIC_FOODS, DISH_TEMPLATES } from './generic';
+import { GENERIC_FOODS as GENERIC_FOOD_SOURCE, DISH_TEMPLATES as DISH_TEMPLATE_SOURCE } from './generic';
 import { INDIAN } from './indian';
 import { SALATA } from './salata';
 import { SUBWAY } from './subway';
 
-export { GENERIC_FOODS, DISH_TEMPLATES };
+function foodText(food: Pick<BreakdownFood, 'name' | 'aliases'>): string {
+  return [food.name, ...(food.aliases ?? [])].join(' ');
+}
+
+function offerFood(food: BreakdownFood): boolean {
+  return isOvoLactoFood(foodText(food));
+}
+
+export const GENERIC_FOODS: readonly BreakdownFood[] = GENERIC_FOOD_SOURCE.filter(offerFood);
+
+export const DISH_TEMPLATES: readonly DishTemplate[] = DISH_TEMPLATE_SOURCE.filter((template) =>
+  isOvoLactoFood([template.name, template.description, ...(template.aliases ?? [])].join(' ')),
+);
 
 export const RESTAURANTS: readonly Restaurant[] = [
   SALATA,
@@ -28,7 +41,10 @@ export const RESTAURANTS: readonly Restaurant[] = [
   CHIPOTLE,
   SUBWAY,
   INDIAN,
-];
+].map((restaurant) => ({
+  ...restaurant,
+  items: restaurant.items.filter(offerFood),
+}));
 
 const foodIndex = new Map<string, BreakdownFood>();
 for (const restaurant of RESTAURANTS) {

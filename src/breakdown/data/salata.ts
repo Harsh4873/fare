@@ -203,71 +203,6 @@ export const SALATA: Restaurant = {
 
     // Proteins
     item({
-      id: 'salata-grilled-chicken',
-      name: 'Grilled Chicken',
-      category: 'Proteins',
-      servingLabel: '1 scoop',
-      servingGrams: 70,
-      nutrition: {
-        calories: 90, proteinG: 17, carbsG: 1, fatG: 2,
-        saturatedFatG: 0.5, fiberG: 0, sugarG: 0, sodiumMg: 240,
-      },
-      tags: ['protein-main'],
-      aliases: ['chicken', 'grilled chicken breast'],
-    }),
-    item({
-      id: 'salata-baja-chicken',
-      name: 'Baja Chicken',
-      category: 'Proteins',
-      servingLabel: '1 scoop',
-      servingGrams: 70,
-      nutrition: {
-        calories: 100, proteinG: 16, carbsG: 2, fatG: 3,
-        saturatedFatG: 1, fiberG: 0, sugarG: 1, sodiumMg: 330,
-      },
-      tags: ['protein-main', 'spicy'],
-      aliases: ['baja spiced chicken', 'spicy chicken'],
-    }),
-    item({
-      id: 'salata-carne-asada-steak',
-      name: 'Carne Asada Steak',
-      category: 'Proteins',
-      servingLabel: '1 scoop',
-      servingGrams: 70,
-      nutrition: {
-        calories: 110, proteinG: 15, carbsG: 1, fatG: 5,
-        saturatedFatG: 2, fiberG: 0, sugarG: 0, sodiumMg: 280,
-      },
-      tags: ['protein-main'],
-      aliases: ['steak', 'carne asada'],
-    }),
-    item({
-      id: 'salata-grilled-shrimp',
-      name: 'Grilled Shrimp',
-      category: 'Proteins',
-      servingLabel: '1 scoop',
-      servingGrams: 60,
-      nutrition: {
-        calories: 60, proteinG: 11, carbsG: 1, fatG: 1,
-        saturatedFatG: 0, fiberG: 0, sugarG: 0, sodiumMg: 330,
-      },
-      tags: ['protein-main'],
-      aliases: ['shrimp'],
-    }),
-    item({
-      id: 'salata-baja-shrimp',
-      name: 'Baja Shrimp',
-      category: 'Proteins',
-      servingLabel: '1 scoop',
-      servingGrams: 60,
-      nutrition: {
-        calories: 70, proteinG: 11, carbsG: 2, fatG: 2,
-        saturatedFatG: 0.5, fiberG: 0, sugarG: 1, sodiumMg: 390,
-      },
-      tags: ['protein-main', 'spicy'],
-      aliases: ['spicy shrimp', 'baja spiced shrimp'],
-    }),
-    item({
       id: 'salata-marinated-tofu',
       name: 'Marinated Tofu',
       category: 'Proteins',
@@ -647,19 +582,6 @@ export const SALATA: Restaurant = {
       },
       tags: ['dressing', 'dairy', 'vegetarian'],
       aliases: ['ranch', 'ranch dressing'],
-    }),
-    item({
-      id: 'salata-caesar',
-      name: 'Caesar',
-      category: 'Dressings',
-      servingLabel: '2 oz ladle',
-      servingGrams: 57,
-      nutrition: {
-        calories: 210, proteinG: 1, carbsG: 2, fatG: 22,
-        saturatedFatG: 3.5, fiberG: 0, sugarG: 1, sodiumMg: 400,
-      },
-      tags: ['dressing', 'dairy'],
-      aliases: ['caesar dressing'],
     }),
     item({
       id: 'salata-blue-cheese',
